@@ -9,7 +9,7 @@ import { auth, db } from '../../firebaseConfig';
 export default function UserProfile() {
   const router = useRouter();
   const user = auth.currentUser;
-  
+
   // Dữ liệu thống kê
   const [stats, setStats] = useState({ contributions: 0, reviews: 0 });
   const [dataList, setDataList] = useState<any[]>([]);
@@ -42,9 +42,9 @@ export default function UserProfile() {
       // 3. Lấy list dữ liệu theo Tab đang chọn
       const list: any[] = [];
       if (activeTab === 'contributions') {
-         snapWC.forEach(doc => list.push({id: doc.id, ...doc.data(), type: 'place'}));
+        snapWC.forEach(doc => list.push({ id: doc.id, ...doc.data(), type: 'place' }));
       } else {
-         snapRev.forEach(doc => list.push({id: doc.id, ...doc.data(), type: 'review'}));
+        snapRev.forEach(doc => list.push({ id: doc.id, ...doc.data(), type: 'review' }));
       }
       setDataList(list);
 
@@ -67,101 +67,101 @@ export default function UserProfile() {
 
   const renderItem = ({ item }: { item: any }) => {
     if (activeTab === 'contributions') {
-       return (
-         <View style={styles.card}>
-            <View style={styles.iconSquare}><Ionicons name="location" size={20} color="#1A73E8"/></View>
-            <View style={{flex:1}}>
-               <Text style={styles.cardTitle}>{item.name}</Text>
-               <Text style={styles.cardSub}>{item.address}</Text>
-               <Text style={[styles.status, {color: item.status==='approved'?'green':'orange'}]}>
-                 {item.status==='approved' ? 'Đã công khai' : 'Đang chờ duyệt'}
-               </Text>
-            </View>
-         </View>
-       );
+      return (
+        <View style={styles.card}>
+          <View style={styles.iconSquare}><Ionicons name="location" size={20} color="#1A73E8" /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>{item.name}</Text>
+            <Text style={styles.cardSub}>{item.address}</Text>
+            <Text style={[styles.status, { color: item.status === 'approved' ? 'green' : 'orange' }]}>
+              {item.status === 'approved' ? 'Đã công khai' : 'Đang chờ duyệt'}
+            </Text>
+          </View>
+        </View>
+      );
     } else {
-       return (
-         <View style={styles.card}>
-            <View style={styles.iconSquare}><Ionicons name="star" size={20} color="#FBC02D"/></View>
-            <View style={{flex:1}}>
-               <Text style={styles.cardTitle}>Đánh giá của bạn</Text>
-               <Text style={styles.cardSub}>"{item.comment}"</Text>
-               <View style={{flexDirection:'row'}}>
-                  {[...Array(item.rating)].map((_,i)=><Ionicons key={i} name="star" size={10} color="#FBC02D"/>)}
-               </View>
+      return (
+        <View style={styles.card}>
+          <View style={styles.iconSquare}><Ionicons name="star" size={20} color="#FBC02D" /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>Đánh giá của bạn</Text>
+            <Text style={styles.cardSub}>"{item.comment}"</Text>
+            <View style={{ flexDirection: 'row' }}>
+              {[...Array(item.rating)].map((_, i) => <Ionicons key={i} name="star" size={10} color="#FBC02D" />)}
             </View>
-         </View>
-       )
+          </View>
+        </View>
+      )
     }
   };
 
   return (
     <View style={styles.container}>
-       {/* Header Profile - Style Google Maps */}
-       <View style={styles.profileHeader}>
-          <Image 
-            source={{ uri: user?.photoURL || `https://ui-avatars.com/api/?name=${user?.displayName}&background=random` }} 
-            style={styles.avatarLarge} 
-          />
-          <Text style={styles.nameLarge}>{user?.displayName || "Người dùng"}</Text>
-          <Text style={styles.levelLabel}>Local Guide • Cấp 1</Text>
-          
-          <View style={styles.statsRow}>
-             <View style={styles.statItem}>
-                <Text style={styles.statNum}>{stats.contributions}</Text>
-                <Text style={styles.statLabel}>Đóng góp</Text>
-             </View>
-             <View style={styles.statItem}>
-                <Text style={styles.statNum}>{stats.reviews}</Text>
-                <Text style={styles.statLabel}>Đánh giá</Text>
-             </View>
-             <View style={styles.statItem}>
-                <Text style={styles.statNum}>0</Text>
-                <Text style={styles.statLabel}>Người theo dõi</Text>
-             </View>
+      {/* Header Profile - Style Google Maps */}
+      <View style={styles.profileHeader}>
+        <Image
+          source={{ uri: user?.photoURL || `https://ui-avatars.com/api/?name=${user?.displayName}&background=random` }}
+          style={styles.avatarLarge}
+        />
+        <Text style={styles.nameLarge}>{user?.displayName || "Người dùng"}</Text>
+        <Text style={styles.levelLabel}>Local Guide • Cấp 1</Text>
+
+        <View style={styles.statsRow}>
+          <View style={styles.statItem}>
+            <Text style={styles.statNum}>{stats.contributions}</Text>
+            <Text style={styles.statLabel}>Đóng góp</Text>
           </View>
-
-          <View style={styles.btnRow}>
-             <TouchableOpacity style={styles.outlineBtn} onPress={() => setEditModalVisible(true)}>
-                <Text style={styles.btnText}>Chỉnh sửa hồ sơ</Text>
-             </TouchableOpacity>
-             <TouchableOpacity style={styles.outlineBtn} onPress={() => auth.signOut().then(() => router.replace('/login'))}>
-                <Ionicons name="log-out-outline" size={18} color="#333" />
-             </TouchableOpacity>
+          <View style={styles.statItem}>
+            <Text style={styles.statNum}>{stats.reviews}</Text>
+            <Text style={styles.statLabel}>Đánh giá</Text>
           </View>
-       </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statNum}>0</Text>
+            <Text style={styles.statLabel}>Người theo dõi</Text>
+          </View>
+        </View>
 
-       {/* Tabs */}
-       <View style={styles.tabs}>
-          <TouchableOpacity onPress={() => setActiveTab('contributions')} style={[styles.tab, activeTab==='contributions' && styles.activeTab]}>
-             <Text style={[styles.tabText, activeTab==='contributions' && styles.activeTabText]}>Đóng góp</Text>
+        <View style={styles.btnRow}>
+          <TouchableOpacity style={styles.outlineBtn} onPress={() => setEditModalVisible(true)}>
+            <Text style={styles.btnText}>Chỉnh sửa hồ sơ</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setActiveTab('reviews')} style={[styles.tab, activeTab==='reviews' && styles.activeTab]}>
-             <Text style={[styles.tabText, activeTab==='reviews' && styles.activeTabText]}>Đánh giá</Text>
+          <TouchableOpacity style={styles.outlineBtn} onPress={() => auth.signOut().then(() => router.replace('/login'))}>
+            <Ionicons name="log-out-outline" size={18} color="#333" />
           </TouchableOpacity>
-       </View>
+        </View>
+      </View>
 
-       {loading ? <ActivityIndicator style={{marginTop: 20}} /> : (
-          <FlatList
-             data={dataList}
-             renderItem={renderItem}
-             keyExtractor={item => item.id}
-             contentContainerStyle={{padding: 20}}
-             ListEmptyComponent={<Text style={{textAlign:'center', marginTop: 30, color:'#999'}}>Chưa có hoạt động nào</Text>}
-          />
-       )}
+      {/* Tabs */}
+      <View style={styles.tabs}>
+        <TouchableOpacity onPress={() => setActiveTab('contributions')} style={[styles.tab, activeTab === 'contributions' && styles.activeTab]}>
+          <Text style={[styles.tabText, activeTab === 'contributions' && styles.activeTabText]}>Đóng góp</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setActiveTab('reviews')} style={[styles.tab, activeTab === 'reviews' && styles.activeTab]}>
+          <Text style={[styles.tabText, activeTab === 'reviews' && styles.activeTabText]}>Đánh giá</Text>
+        </TouchableOpacity>
+      </View>
 
-       {/* Modal Đổi tên (Giữ nguyên logic cũ nhưng style lại nếu cần) */}
-       <Modal visible={editModalVisible} transparent animationType="fade">
+      {loading ? <ActivityIndicator style={{ marginTop: 20 }} /> : (
+        <FlatList
+          data={dataList}
+          renderItem={renderItem}
+          keyExtractor={item => item.id}
+          contentContainerStyle={{ padding: 20 }}
+          ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 30, color: '#999' }}>Chưa có hoạt động nào</Text>}
+        />
+      )}
+
+      {/* Modal Đổi tên (Giữ nguyên logic cũ nhưng style lại nếu cần) */}
+      <Modal visible={editModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Cập nhật tên</Text>
-                <TextInput style={styles.input} value={newName} onChangeText={setNewName} placeholder="Nhập tên mới..." />
-                <View style={styles.modalButtons}>
-                    <TouchableOpacity onPress={() => setEditModalVisible(false)} style={styles.cancelBtn}><Text>Hủy</Text></TouchableOpacity>
-                    <TouchableOpacity onPress={handleUpdateProfile} style={styles.confirmBtn}><Text style={{color: 'white'}}>Lưu</Text></TouchableOpacity>
-                </View>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Cập nhật tên</Text>
+            <TextInput style={styles.input} value={newName} onChangeText={setNewName} placeholder="Nhập tên mới..." />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity onPress={() => setEditModalVisible(false)} style={styles.cancelBtn}><Text>Hủy</Text></TouchableOpacity>
+              <TouchableOpacity onPress={handleUpdateProfile} style={styles.confirmBtn}><Text style={{ color: 'white' }}>Lưu</Text></TouchableOpacity>
             </View>
+          </View>
         </View>
       </Modal>
 
@@ -175,7 +175,7 @@ const styles = StyleSheet.create({
   avatarLarge: { width: 80, height: 80, borderRadius: 40, marginBottom: 10 },
   nameLarge: { fontSize: 22, fontWeight: 'bold', color: '#202124' },
   levelLabel: { color: '#EA8600', fontWeight: 'bold', fontSize: 12, marginTop: 2 },
-  
+
   statsRow: { flexDirection: 'row', width: '100%', justifyContent: 'space-around', marginTop: 20, marginBottom: 20 },
   statItem: { alignItems: 'center' },
   statNum: { fontSize: 16, fontWeight: 'bold', color: '#202124' },

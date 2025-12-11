@@ -116,7 +116,7 @@ export default function ToiletList() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Gần bạn nhất 🏃💨</Text>
+        <Text style={styles.headerTitle}>Gần bạn nhất</Text>
       </View>
       {loading ? (
         <ActivityIndicator size="large" color="#2196F3" style={{ marginTop: 50 }} />
