@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { updateProfile } from "firebase/auth";
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -10,7 +11,7 @@ import {
   query,
   where,
 } from "firebase/firestore";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -18,6 +19,7 @@ import {
   Image,
   Modal,
   Platform,
+  RefreshControl,
   SafeAreaView,
   StatusBar,
   StyleSheet,
@@ -28,7 +30,7 @@ import {
 } from "react-native";
 import { auth, db } from "../../firebaseConfig";
 import { seedDatabase } from "../../utils/seedToilets";
-import ToiletDetailModal from "../ToiletDetailModal"; // 👉 Import Modal Chi Tiết
+import ToiletDetailModal from "../ToiletDetailModal";
 import MyBookings from "./MyBookings";
 
 export default function UserProfile() {
@@ -40,6 +42,7 @@ export default function UserProfile() {
   const [dataList, setDataList] = useState<any[]>([]);
   const [stats, setStats] = useState({ count: 0 });
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [activeBooking, setActiveBooking] = useState<any>(null);
 
@@ -48,7 +51,7 @@ export default function UserProfile() {
   const [newName, setNewName] = useState(user?.displayName || "");
   const [showMyBookings, setShowMyBookings] = useState(false);
 
-  // 👉 State cho việc xem lại địa điểm cũ
+  // State cho việc xem lại địa điểm cũ
   const [selectedToilet, setSelectedToilet] = useState<any>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
 
@@ -99,7 +102,8 @@ export default function UserProfile() {
   // FETCH DATA LIST
   const fetchData = async () => {
     if (!user || !userRole || !activeTab) return;
-    setLoading(true);
+    if (!refreshing) setLoading(true);
+
     setDataList([]);
     try {
       if (userRole === "provider" && activeTab === "places") {
@@ -120,13 +124,36 @@ export default function UserProfile() {
           where("userEmail", "==", user.email)
         );
         const snapRev = await getDocs(qRev);
-        const list: any[] = [];
-        snapRev.forEach((doc) =>
-          list.push({ id: doc.id, ...doc.data(), type: "review" })
+
+        const list = await Promise.all(
+          snapRev.docs.map(async (d) => {
+            const reviewData = d.data();
+            let finalName = reviewData.toiletName;
+
+            if (!finalName && reviewData.toiletId) {
+              try {
+                const toiletDoc = await getDoc(
+                  doc(db, "toilets", reviewData.toiletId)
+                );
+                if (toiletDoc.exists()) {
+                  finalName = toiletDoc.data().name;
+                }
+              } catch (err) {
+                console.log("Không lấy được tên toilet:", err);
+              }
+            }
+
+            return {
+              id: d.id,
+              ...reviewData,
+              toiletName: finalName || "Địa điểm cũ",
+              type: "review",
+            };
+          })
         );
-        // Sort review mới nhất lên đầu
+
         list.sort(
-          (a, b) =>
+          (a: any, b: any) =>
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
         setDataList(list);
@@ -136,10 +163,16 @@ export default function UserProfile() {
       console.log(error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
   useEffect(() => {
+    fetchData();
+  }, [activeTab, userRole]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
     fetchData();
   }, [activeTab, userRole]);
 
@@ -152,6 +185,51 @@ export default function UserProfile() {
     } catch (error: any) {
       Alert.alert("Lỗi", error.message);
     }
+  };
+
+  const handleLogout = () => {
+    Alert.alert("Đăng xuất", "Bạn có chắc muốn đăng xuất khỏi tài khoản?", [
+      { text: "Ở lại", style: "cancel" },
+      {
+        text: "Đăng xuất",
+        style: "destructive",
+        onPress: () => auth.signOut().then(() => router.replace("/login")),
+      },
+    ]);
+  };
+
+  // 👉 HÀM XÓA REVIEW
+  const handleDeleteReview = (reviewId: string) => {
+    Alert.alert(
+      "Xóa đánh giá",
+      "Bạn có chắc muốn xóa bài đánh giá này không? Hành động này không thể hoàn tác.",
+      [
+        { text: "Hủy", style: "cancel" },
+        {
+          text: "Xóa luôn",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              // Xóa trên Firestore
+              await deleteDoc(doc(db, "reviews", reviewId));
+
+              // Cập nhật lại UI ngay lập tức (xóa khỏi mảng dataList)
+              setDataList((prevList) =>
+                prevList.filter((item) => item.id !== reviewId)
+              );
+              setStats((prev) => ({
+                ...prev,
+                count: Math.max(0, prev.count - 1),
+              }));
+
+              Alert.alert("Đã xóa", "Bài đánh giá đã bay màu! 🗑️");
+            } catch (error: any) {
+              Alert.alert("Lỗi", "Không xóa được: " + error.message);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleSeedData = async () => {
@@ -179,11 +257,8 @@ export default function UserProfile() {
     ]);
   };
 
-  // 👉 HÀM XỬ LÝ KHI BẤM VÀO ITEM LỊCH SỬ ĐỂ XEM LẠI/CHECK-IN LẠI
   const handleRevisit = async (item: any) => {
     if (!item.toiletId) return;
-
-    // Fetch lại thông tin toilet mới nhất từ DB để đảm bảo data đúng
     try {
       const docRef = doc(db, "toilets", item.toiletId);
       const docSnap = await getDoc(docRef);
@@ -201,7 +276,6 @@ export default function UserProfile() {
 
   const renderItem = ({ item }: { item: any }) => {
     if (item.type === "place") {
-      // CARD CHO PROVIDER (Giữ nguyên)
       return (
         <View style={styles.card}>
           <View style={[styles.iconSquare, { backgroundColor: "#E3F2FD" }]}>
@@ -248,27 +322,42 @@ export default function UserProfile() {
         </View>
       );
     } else {
-      // 👉 CARD CHO USER (LỊCH SỬ ĐÁNH GIÁ) - ĐÃ UPDATE NÚT RE-VISIT
       return (
         <TouchableOpacity
           style={styles.card}
           activeOpacity={0.7}
-          onPress={() => handleRevisit(item)} // Bấm vào để xem lại
+          onPress={() => handleRevisit(item)}
         >
           <View style={[styles.iconSquare, { backgroundColor: "#FFF8E1" }]}>
             <Ionicons name="star" size={24} color="#FFC107" />
           </View>
           <View style={{ flex: 1 }}>
+            {/* Hàng 1: Tên + Ngày + Nút xóa */}
             <View
-              style={{ flexDirection: "row", justifyContent: "space-between" }}
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+              }}
             >
-              {/* Dùng toiletName nếu có, fallback về "Địa điểm cũ" */}
               <Text style={styles.cardTitle} numberOfLines={1}>
-                {item.toiletName || "Địa điểm đã ghé"}
+                {item.toiletName}
               </Text>
-              <Text style={styles.dateText}>
-                {new Date(item.createdAt).toLocaleDateString("vi-VN")}
-              </Text>
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+              >
+                <Text style={styles.dateText}>
+                  {new Date(item.createdAt).toLocaleDateString("vi-VN")}
+                </Text>
+                {/* 👉 Nút thùng rác */}
+                <TouchableOpacity
+                  onPress={() => handleDeleteReview(item.id)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  style={styles.deleteBtn}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#FF5252" />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <View
@@ -279,17 +368,28 @@ export default function UserProfile() {
                 marginTop: 4,
               }}
             >
-              <View style={{ flexDirection: "row" }}>
-                {[...Array(5)].map((_, i) => (
-                  <Ionicons
-                    key={i}
-                    name={i < (item.rating || 5) ? "star" : "star-outline"}
-                    size={12}
-                    color="#FFC107"
-                  />
-                ))}
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Text
+                  style={{
+                    fontWeight: "bold",
+                    fontSize: 13,
+                    color: "#FFB300",
+                    marginRight: 4,
+                  }}
+                >
+                  {item.rating ? Number(item.rating).toFixed(1) : "5.0"}
+                </Text>
+                <View style={{ flexDirection: "row" }}>
+                  {[...Array(5)].map((_, i) => (
+                    <Ionicons
+                      key={i}
+                      name={i < (item.rating || 5) ? "star" : "star-outline"}
+                      size={12}
+                      color="#FFC107"
+                    />
+                  ))}
+                </View>
               </View>
-              {/* Nút nhỏ gợi ý */}
               <View style={styles.revisitBadge}>
                 <Text style={styles.revisitText}>Quay lại</Text>
                 <Ionicons name="arrow-forward" size={10} color="#2196F3" />
@@ -321,9 +421,15 @@ export default function UserProfile() {
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ paddingBottom: 20 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#2196F3"]}
+          />
+        }
         ListHeaderComponent={
           <>
-            {/* HEADER PROFILE */}
             <View style={styles.profileHeader}>
               <View style={styles.userInfoRow}>
                 <Image
@@ -360,7 +466,6 @@ export default function UserProfile() {
                 </TouchableOpacity>
               </View>
 
-              {/* STATS ROW */}
               <View style={styles.statsContainer}>
                 <View style={styles.statBox}>
                   <Text style={styles.statNumber}>{stats.count}</Text>
@@ -375,7 +480,6 @@ export default function UserProfile() {
                 </View>
               </View>
 
-              {/* ACTION BUTTONS */}
               <View style={styles.actionGrid}>
                 {userRole === "provider" && (
                   <TouchableOpacity
@@ -405,9 +509,7 @@ export default function UserProfile() {
 
                 <TouchableOpacity
                   style={styles.actionBtn}
-                  onPress={() =>
-                    auth.signOut().then(() => router.replace("/login"))
-                  }
+                  onPress={handleLogout}
                 >
                   <View
                     style={[styles.actionIcon, { backgroundColor: "#FFEBEE" }]}
@@ -425,7 +527,6 @@ export default function UserProfile() {
               </View>
             </View>
 
-            {/* ACTIVE BOOKING SECTION */}
             {userRole === "user" && activeBooking && (
               <View style={styles.sectionContainer}>
                 <Text style={styles.sectionHeaderTitle}>
@@ -516,7 +617,6 @@ export default function UserProfile() {
               </View>
             )}
 
-            {/* LIST HEADER */}
             <View style={styles.listHeaderContainer}>
               <Text style={styles.sectionHeaderTitle}>
                 {userRole === "provider"
@@ -549,8 +649,17 @@ export default function UserProfile() {
               <Text style={styles.emptySubText}>
                 {userRole === "provider"
                   ? "Hãy thêm địa điểm đầu tiên của bạn!"
-                  : "Bạn chưa trải nghiệm địa điểm nào. Hãy khám phá ngay!"}
+                  : "Bạn chưa trải nghiệm địa điểm nào."}
               </Text>
+
+              {userRole === "user" && (
+                <TouchableOpacity
+                  style={styles.exploreBtn}
+                  onPress={() => router.replace("/(tabs)/")}
+                >
+                  <Text style={styles.exploreBtnText}>Khám phá ngay</Text>
+                </TouchableOpacity>
+              )}
             </View>
           ) : (
             <ActivityIndicator style={{ marginTop: 20 }} color="#2196F3" />
@@ -609,7 +718,6 @@ export default function UserProfile() {
         </View>
       </Modal>
 
-      {/* 👉 THÊM MODAL CHI TIẾT ĐỂ MỞ LẠI ĐỊA ĐIỂM CŨ */}
       <ToiletDetailModal
         visible={detailModalVisible}
         toilet={selectedToilet}
@@ -795,7 +903,9 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 12, fontWeight: "600" },
   priceTag: { fontSize: 14, fontWeight: "700", color: "#2196F3" },
 
-  // 👉 Style mới cho nút Re-visit
+  // Style cho nút xóa
+  deleteBtn: { padding: 4, backgroundColor: "#FFEBEE", borderRadius: 6 },
+
   revisitBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -819,7 +929,17 @@ const styles = StyleSheet.create({
     color: "#999",
     fontSize: 13,
     textAlign: "center",
+    marginBottom: 20,
   },
+
+  exploreBtn: {
+    backgroundColor: "#2196F3",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 25,
+    elevation: 2,
+  },
+  exploreBtnText: { color: "white", fontWeight: "bold", fontSize: 14 },
 
   // MODAL EDIT
   modalOverlay: {

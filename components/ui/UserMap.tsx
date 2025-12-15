@@ -363,7 +363,7 @@ export default function UserMap() {
               onPress={() => handleFilter('all')}
             >
               <Ionicons name="apps" size={16} color={activeFilters.length === 0 ? "white" : "#555"} />
-              <Text style={[styles.filterText, activeFilters.length === 0 && styles.filterTextActive]}>Tất cả</Text>
+              <Text style={[styles.filterText, activeFilters.length === 0 && styles.filterTextActive]}>Gần tôi</Text>
           </TouchableOpacity>
 
           {/* Các nút filter khác */}
