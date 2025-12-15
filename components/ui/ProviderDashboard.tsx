@@ -1,130 +1,3 @@
-// import { Ionicons } from '@expo/vector-icons';
-// import { collection, onSnapshot, query, where } from 'firebase/firestore';
-// import React, { useEffect, useState } from 'react';
-// import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-
-// // 👉 SỬA ĐƯỜNG DẪN IMPORT Ở ĐÂY:
-// import { auth, db } from '../../firebaseConfig'; // Lùi 2 cấp
-
-// export default function ProviderDashboard() {
-//   const user = auth.currentUser;
-//   const [myToilets, setMyToilets] = useState<any[]>([]);
-//   const [loading, setLoading] = useState(true);
-//   const [stats, setStats] = useState({ totalViews: 0, totalIncome: 0 });
-
-//   useEffect(() => {
-//     if (!user) return;
-//     setLoading(true);
-
-//     // 👉 Chỉ lấy WC do chính Provider này tạo
-//     const q = query(collection(db, "toilets"), where("createdBy", "==", user.email));
-
-//     const unsubscribe = onSnapshot(q, (snapshot) => {
-//       const list: any[] = [];
-//       let income = 0;
-
-//       snapshot.forEach((doc) => {
-//         const data = doc.data();
-//         list.push({ id: doc.id, ...data });
-//         // Giả sử mỗi WC có trường totalIncome, tạm thời random cho vui mắt
-//         income += (data.price || 5000) * (data.ratingCount || 1); 
-//       });
-
-//       setMyToilets(list);
-//       setStats({ totalViews: list.length, totalIncome: income });
-//       setLoading(false);
-//     });
-
-//     return () => unsubscribe();
-//   }, []);
-
-//   const renderMyWC = ({ item }: { item: any }) => (
-//     <View style={styles.wcCard}>
-//       <View style={styles.wcIcon}>
-//         <Ionicons name="business" size={24} color="#FF9800" />
-//       </View>
-//       <View style={{flex: 1}}>
-//         <Text style={styles.wcName}>{item.name}</Text>
-//         <Text style={styles.wcAddress}>{item.address}</Text>
-//         <View style={styles.statusRow}>
-//             <View style={[styles.statusBadge, {backgroundColor: item.status === 'approved' ? '#E8F5E9' : '#FFF3E0'}]}>
-//                 <Text style={{fontSize: 10, color: item.status === 'approved' ? 'green' : 'orange', fontWeight: 'bold'}}>
-//                     {item.status === 'approved' ? 'ĐANG HOẠT ĐỘNG' : 'CHỜ DUYỆT'}
-//                 </Text>
-//             </View>
-//             <Text style={styles.ratingText}>⭐ {item.rating || 5.0}</Text>
-//         </View>
-//       </View>
-//       <TouchableOpacity style={styles.editBtn}>
-//         <Ionicons name="create-outline" size={20} color="#666" />
-//       </TouchableOpacity>
-//     </View>
-//   );
-
-//   return (
-//     <View style={styles.container}>
-//       {/* HEADER DASHBOARD */}
-//       <View style={styles.header}>
-//         <Text style={styles.greeting}>Xin chào, Chủ tịch 👋</Text>
-//         <Text style={styles.email}>{user?.email}</Text>
-
-//         <View style={styles.statsContainer}>
-//             <View style={styles.statBox}>
-//                 <Text style={styles.statNumber}>{stats.totalViews}</Text>
-//                 <Text style={styles.statLabel}>Địa điểm</Text>
-//             </View>
-//             <View style={styles.line} />
-//             <View style={styles.statBox}>
-//                 <Text style={styles.statNumber}>{stats.totalIncome.toLocaleString()}đ</Text>
-//                 <Text style={styles.statLabel}>Doanh thu (Ước tính)</Text>
-//             </View>
-//         </View>
-//       </View>
-
-//       {/* DANH SÁCH WC CỦA TÔI */}
-//       <View style={styles.body}>
-//         <Text style={styles.sectionTitle}>Cơ sở vật chất của tôi 🏢</Text>
-//         {loading ? (
-//             <ActivityIndicator size="large" color="#FF9800" />
-//         ) : (
-//             <FlatList
-//                 data={myToilets}
-//                 renderItem={renderMyWC}
-//                 keyExtractor={item => item.id}
-//                 ListEmptyComponent={<Text style={styles.empty}>Bạn chưa có địa điểm nào.</Text>}
-//                 contentContainerStyle={{paddingBottom: 20}}
-//             />
-//         )}
-//       </View>
-//     </View>
-//   );
-// }
-
-// const styles = StyleSheet.create({
-//   container: { flex: 1, backgroundColor: '#F5F5F5' },
-//   header: { backgroundColor: '#2196F3', padding: 20, paddingTop: 60, borderBottomLeftRadius: 20, borderBottomRightRadius: 20 },
-//   greeting: { fontSize: 22, fontWeight: 'bold', color: 'white' },
-//   email: { fontSize: 14, color: '#E3F2FD', marginBottom: 20 },
-//   statsContainer: { flexDirection: 'row', backgroundColor: 'white', borderRadius: 15, padding: 15, elevation: 5 },
-//   statBox: { flex: 1, alignItems: 'center' },
-//   statNumber: { fontSize: 18, fontWeight: 'bold', color: '#333' },
-//   statLabel: { fontSize: 12, color: '#666' },
-//   line: { width: 1, backgroundColor: '#EEE' },
-
-//   body: { flex: 1, padding: 20 },
-//   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 15 },
-//   wcCard: { flexDirection: 'row', backgroundColor: 'white', padding: 15, borderRadius: 12, marginBottom: 10, alignItems: 'center', elevation: 2 },
-//   wcIcon: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#FFF3E0', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-//   wcName: { fontSize: 16, fontWeight: 'bold', color: '#333' },
-//   wcAddress: { fontSize: 12, color: '#666', marginBottom: 5 },
-//   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-//   statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
-//   ratingText: { fontSize: 12, fontWeight: 'bold', color: '#F57C00' },
-//   editBtn: { padding: 10 },
-//   empty: { textAlign: 'center', color: '#999', marginTop: 30 }
-// });
-
-// app/(tabs)/provider-dashboard.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { collection, deleteDoc, doc, getDoc, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
@@ -140,6 +13,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import QRCode from 'react-native-qrcode-svg'; // Đảm bảo đã cài: npm install react-native-qrcode-svg
 import { auth, db } from '../../firebaseConfig';
 
 export default function ProviderDashboard() {
@@ -158,6 +32,10 @@ export default function ProviderDashboard() {
   const [editPrice, setEditPrice] = useState('');
   const [editAddress, setEditAddress] = useState('');
 
+  // Modal QR Code
+  const [qrModalVisible, setQrModalVisible] = useState(false);
+  const [selectedQRToilet, setSelectedQRToilet] = useState<any>(null);
+
   // 1. Kiểm tra role
   useEffect(() => {
     const checkRole = async () => {
@@ -166,9 +44,10 @@ export default function ProviderDashboard() {
       const role = userDoc.data()?.role || 'user';
       setUserRole(role);
 
+      // Nếu không phải provider (và không phải admin - tuỳ logic), đá về
       if (role !== 'provider') {
-        Alert.alert('Không có quyền', 'Chỉ nhà cung cấp mới truy cập được!');
-        router.back();
+        // Alert.alert('Không có quyền', 'Chỉ nhà cung cấp mới truy cập được!');
+        // router.back();
       }
     };
     checkRole();
@@ -176,7 +55,7 @@ export default function ProviderDashboard() {
 
   // 2. Load danh sách WC của mình
   useEffect(() => {
-    if (!user || userRole !== 'provider') return;
+    if (!user) return;
 
     const q = query(collection(db, 'toilets'), where('createdBy', '==', user.email));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -190,8 +69,7 @@ export default function ProviderDashboard() {
         if (data.status === 'approved') approved++;
         else pending++;
 
-        // Giả sử mỗi WC có field checkInCount (số lượt check-in)
-        revenue += (data.price || 0) * (data.checkInCount || 0);
+        revenue += (data.price || 0) * (data.ratingCount || 0); // Mock doanh thu
       });
 
       setMyToilets(list);
@@ -200,7 +78,7 @@ export default function ProviderDashboard() {
     });
 
     return () => unsubscribe();
-  }, [userRole]);
+  }, [user]);
 
   // 3. Hàm sửa WC
   const handleEdit = (item: any) => {
@@ -245,6 +123,12 @@ export default function ProviderDashboard() {
     ]);
   };
 
+  // 5. Hàm hiển thị QR
+  const handleShowQR = (item: any) => {
+    setSelectedQRToilet(item);
+    setQrModalVisible(true);
+  };
+
   const renderItem = ({ item }: { item: any }) => (
     <View style={styles.card}>
       <View style={{ flex: 1 }}>
@@ -259,14 +143,39 @@ export default function ProviderDashboard() {
           <Text style={styles.priceText}>{item.price === 0 ? 'Miễn phí' : `${Number(item.price).toLocaleString()}đ`}</Text>
         </View>
       </View>
+      
       <View style={styles.actionButtons}>
+        {/* Nút xem QR Code */}
+        <TouchableOpacity onPress={() => handleShowQR(item)} style={styles.qrBtn}>
+          <Ionicons name="qr-code" size={18} color="white" />
+        </TouchableOpacity>
+
         <TouchableOpacity onPress={() => handleEdit(item)} style={styles.editBtn}>
           <Ionicons name="pencil" size={18} color="#2196F3" />
         </TouchableOpacity>
+        
         <TouchableOpacity onPress={() => handleDelete(item)} style={styles.deleteBtn}>
           <Ionicons name="trash" size={18} color="#F44336" />
         </TouchableOpacity>
       </View>
+    </View>
+  );
+
+  // 👉 Nút thêm mới khi danh sách rỗng
+  const renderEmptyState = () => (
+    <View style={styles.emptyState}>
+        <Ionicons name="storefront-outline" size={64} color="#ccc" />
+        <Text style={styles.emptyText}>Chưa có địa điểm nào</Text>
+        <Text style={styles.emptySubText}>
+            Tạo ngay địa điểm đầu tiên để lấy mã QR và bắt đầu đón khách!
+        </Text>
+        <TouchableOpacity 
+            style={styles.btnAddFirst}
+            onPress={() => router.push('/(tabs)/profile')} // Chuyển sang Tab Thêm mới
+        >
+            <Ionicons name="add-circle" size={24} color="white" />
+            <Text style={styles.btnAddFirstText}>Thêm địa điểm ngay</Text>
+        </TouchableOpacity>
     </View>
   );
 
@@ -282,11 +191,11 @@ export default function ProviderDashboard() {
     <View style={styles.container}>
       {/* Header Stats */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Provider Dashboard</Text>
+        <Text style={styles.headerTitle}>Quản lý cơ sở</Text>
         <View style={styles.statsRow}>
           <View style={[styles.statBox, { backgroundColor: '#E3F2FD' }]}>
             <Text style={styles.statNumber}>{stats.total}</Text>
-            <Text style={styles.statLabel}>Tổng WC</Text>
+            <Text style={styles.statLabel}>Tổng số</Text>
           </View>
           <View style={[styles.statBox, { backgroundColor: '#E8F5E9' }]}>
             <Text style={styles.statNumber}>{stats.approved}</Text>
@@ -305,13 +214,13 @@ export default function ProviderDashboard() {
 
       {/* List */}
       <View style={styles.listContainer}>
-        <Text style={styles.sectionTitle}>WC của tôi ({myToilets.length})</Text>
+        <Text style={styles.sectionTitle}>Danh sách địa điểm ({myToilets.length})</Text>
         <FlatList
           data={myToilets}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
-          ListEmptyComponent={<Text style={styles.emptyText}>Chưa có WC nào. Hãy thêm mới ở tab Add!</Text>}
-          contentContainerStyle={{ paddingBottom: 20 }}
+          ListEmptyComponent={renderEmptyState} // 👉 Sử dụng component empty state mới
+          contentContainerStyle={{ paddingBottom: 20, flexGrow: 1 }}
         />
       </View>
 
@@ -319,37 +228,52 @@ export default function ProviderDashboard() {
       <Modal visible={editModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Chỉnh sửa WC</Text>
-            <TextInput
-              style={styles.input}
-              value={editName}
-              onChangeText={setEditName}
-              placeholder="Tên WC"
-            />
-            <TextInput
-              style={styles.input}
-              value={editAddress}
-              onChangeText={setEditAddress}
-              placeholder="Địa chỉ"
-            />
-            <TextInput
-              style={styles.input}
-              value={editPrice}
-              onChangeText={setEditPrice}
-              placeholder="Giá (VNĐ)"
-              keyboardType="numeric"
-            />
+            <Text style={styles.modalTitle}>Chỉnh sửa thông tin</Text>
+            <TextInput style={styles.input} value={editName} onChangeText={setEditName} placeholder="Tên địa điểm" />
+            <TextInput style={styles.input} value={editAddress} onChangeText={setEditAddress} placeholder="Địa chỉ" />
+            <TextInput style={styles.input} value={editPrice} onChangeText={setEditPrice} placeholder="Giá vé (VNĐ)" keyboardType="numeric" />
             <View style={styles.modalButtons}>
-              <TouchableOpacity onPress={() => setEditModalVisible(false)} style={styles.cancelBtn}>
-                <Text>Hủy</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleSaveEdit} style={styles.confirmBtn}>
-                <Text style={{ color: 'white' }}>Lưu</Text>
-              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setEditModalVisible(false)} style={styles.cancelBtn}><Text style={{color: '#666'}}>Hủy</Text></TouchableOpacity>
+              <TouchableOpacity onPress={handleSaveEdit} style={styles.confirmBtn}><Text style={{ color: 'white', fontWeight: 'bold' }}>Lưu thay đổi</Text></TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
+
+      {/* QR Code Modal - ĐỂ IN RA DÁN TƯỜNG */}
+      <Modal visible={qrModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.qrModalContent}>
+            <View style={styles.qrHeader}>
+               <Text style={styles.modalTitle}>Mã QR Cửa Hàng</Text>
+               <TouchableOpacity onPress={() => setQrModalVisible(false)}>
+                 <Ionicons name="close" size={24} color="#333" />
+               </TouchableOpacity>
+            </View>
+            
+            <Text style={styles.qrSubtitle}>Dán mã này tại quầy để khách check-in</Text>
+            
+            {selectedQRToilet && (
+              <View style={styles.qrWrapper}>
+                <QRCode
+                  value={`STORE_${selectedQRToilet.id}`} // 👉 Format chuẩn: STORE_ID
+                  size={200}
+                  logoBackgroundColor='transparent'
+                />
+              </View>
+            )}
+            
+            <Text style={styles.storeName}>{selectedQRToilet?.name}</Text>
+            <Text style={styles.storeId}>ID: STORE_{selectedQRToilet?.id}</Text>
+
+            <TouchableOpacity style={styles.printBtn} onPress={() => Alert.alert("Thông báo", "Tính năng in đang phát triển! Hãy chụp màn hình nhé.")}>
+                <Ionicons name="print" size={20} color="white" />
+                <Text style={{color:'white', fontWeight:'bold', marginLeft: 8}}>In Mã QR</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -360,9 +284,9 @@ const styles = StyleSheet.create({
   header: { backgroundColor: 'white', padding: 20, paddingTop: 60, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, elevation: 5 },
   headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#333', marginBottom: 20 },
   statsRow: { flexDirection: 'row', gap: 10, marginBottom: 15 },
-  statBox: { flex: 1, padding: 15, borderRadius: 12, alignItems: 'center' },
-  statNumber: { fontSize: 24, fontWeight: 'bold', color: '#333' },
-  statLabel: { fontSize: 12, color: '#666', marginTop: 5 },
+  statBox: { flex: 1, padding: 10, borderRadius: 12, alignItems: 'center' },
+  statNumber: { fontSize: 20, fontWeight: 'bold', color: '#333' },
+  statLabel: { fontSize: 11, color: '#666', marginTop: 5 },
   revenueBox: { padding: 15, borderRadius: 12, alignItems: 'center' },
   revenueLabel: { fontSize: 12, color: '#666' },
   revenueAmount: { fontSize: 22, fontWeight: 'bold', color: '#7B1FA2', marginTop: 5 },
@@ -376,17 +300,34 @@ const styles = StyleSheet.create({
   statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   statusText: { fontSize: 11, fontWeight: 'bold' },
   priceText: { fontSize: 13, fontWeight: 'bold', color: '#2196F3' },
-  actionButtons: { flexDirection: 'row', gap: 10 },
-  editBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#E3F2FD', justifyContent: 'center', alignItems: 'center' },
+  
+  actionButtons: { justifyContent: 'space-between', paddingLeft: 10, borderLeftWidth: 1, borderLeftColor: '#eee' },
+  qrBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#4CAF50', justifyContent: 'center', alignItems: 'center', marginBottom: 5 },
+  editBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#E3F2FD', justifyContent: 'center', alignItems: 'center', marginBottom: 5 },
   deleteBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFEBEE', justifyContent: 'center', alignItems: 'center' },
-  emptyText: { textAlign: 'center', color: '#999', marginTop: 50 },
+  
+  // 👉 Style cho Empty State
+  emptyState: { alignItems: 'center', justifyContent: 'center', marginTop: 50, padding: 20 },
+  emptyText: { textAlign: 'center', color: '#333', fontSize: 18, fontWeight: 'bold', marginTop: 15 },
+  emptySubText: { textAlign: 'center', color: '#666', fontSize: 14, marginTop: 5, marginBottom: 25, width: '80%' },
+  btnAddFirst: { flexDirection: 'row', backgroundColor: '#2196F3', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 25, alignItems: 'center', elevation: 3 },
+  btnAddFirstText: { color: 'white', fontWeight: 'bold', marginLeft: 8 },
 
-  // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 30 },
-  modalContent: { backgroundColor: 'white', padding: 20, borderRadius: 15 },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 10, marginBottom: 10 },
+  // Modal General
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20, alignItems: 'center' },
+  modalContent: { backgroundColor: 'white', padding: 20, borderRadius: 15, width: '100%' },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' },
+  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 10, marginBottom: 10, marginTop: 10 },
   modalButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 10 },
   cancelBtn: { padding: 10 },
   confirmBtn: { backgroundColor: '#2196F3', padding: 10, borderRadius: 8, paddingHorizontal: 20 },
+
+  // QR Modal Specific
+  qrModalContent: { backgroundColor: 'white', padding: 20, borderRadius: 20, width: 320, alignItems: 'center' },
+  qrHeader: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 10 },
+  qrSubtitle: { color: '#666', marginBottom: 20, textAlign: 'center' },
+  qrWrapper: { padding: 15, backgroundColor: 'white', borderRadius: 10, elevation: 5, marginBottom: 15 },
+  storeName: { fontSize: 18, fontWeight: 'bold', color: '#333', textAlign: 'center' },
+  storeId: { fontSize: 12, color: '#999', marginTop: 5, fontFamily: 'monospace' },
+  printBtn: { flexDirection: 'row', backgroundColor: '#2196F3', paddingVertical: 12, paddingHorizontal: 30, borderRadius: 25, marginTop: 20, alignItems: 'center' }
 });

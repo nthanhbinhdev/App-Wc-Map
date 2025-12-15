@@ -6,10 +6,10 @@ import { ActivityIndicator, View } from 'react-native';
 import { auth, db } from '../../firebaseConfig';
 
 export default function TabLayout() {
+  // Mặc định là null để chưa hiện gì cả khi đang load
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Kiểm tra quyền khi load Tab
   useEffect(() => {
     const checkRole = async () => {
       const user = auth.currentUser;
@@ -39,18 +39,21 @@ export default function TabLayout() {
   return (
     <Tabs screenOptions={{ headerShown: false, tabBarActiveTintColor: '#2196F3' }}>
 
-      {/*Nhóm dành cho USER */}
+
+
+      {/* =========================================================
+          NHÓM 2: USER (Khách tìm nhà vệ sinh)
+         ========================================================= */}
       <Tabs.Screen
         name="index"
         options={{
           title: 'Bản đồ',
-          // 👉 Sửa lại chỗ này: Trỏ về chính nó (undefined) nếu là User, còn Provider thì ẩn (null)
-          // href: undefined nghĩa là "cứ hiện bình thường"
-          href: role === 'user' ? undefined : null,
+          // Chỉ User thấy Map đầu tiên, hoặc Admin muốn soi map thì để Admin thấy luôn
+          href: (role === 'user' || role === 'admin') ? undefined : null, 
           tabBarIcon: ({ color }) => <Ionicons name="map" size={24} color={color} />,
         }}
       />
-
+      
       <Tabs.Screen
         name="explore"
         options={{
@@ -63,31 +66,42 @@ export default function TabLayout() {
       <Tabs.Screen
         name="chatbot"
         options={{
-          title: 'Trợ lý',
+          title: 'Trợ lý AI',
           href: role === 'user' ? '/(tabs)/chatbot' : null,
           tabBarIcon: ({ color }) => <Ionicons name="chatbubble-ellipses" size={24} color={color} />,
         }}
       />
 
-      {/*Nhóm danh cho provider*/}
-
+      {/* =========================================================
+          NHÓM 3: PROVIDER (Chủ nhà tắm)
+         ========================================================= */}
       <Tabs.Screen
         name="dashboard"
         options={{
           title: 'Tổng quan',
-          // Nếu là Provider thì mới hiện
           href: role === 'provider' ? '/(tabs)/dashboard' : null,
           tabBarIcon: ({ color }) => <Ionicons name="pie-chart" size={24} color={color} />,
         }}
       />
+
+      <Tabs.Screen
+        name="bookings"
+        options={{
+          title: 'Đặt chỗ',
+          href: role === 'provider' ? '/(tabs)/bookings' : null,
+          tabBarIcon: ({ color }) => <Ionicons name="calendar" size={24} color={color} />,
+        }}
+      />
+
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Add',
+          title: 'Thêm mới',
           href: role === 'provider' ? '/(tabs)/profile' : null,
           tabBarIcon: ({ color }) => <Ionicons name="add-circle" size={32} color={color} />,
         }}
       />
+      
       <Tabs.Screen
         name="finance"
         options={{
@@ -110,11 +124,14 @@ export default function TabLayout() {
         name="incidents"
         options={{
           title: 'Phản hồi',
-          href: role === 'provider' ? '/(tabs)/incidents' : null,
+          // Admin cũng cần xem phản hồi để xử lý tranh chấp
+          href: (role === 'provider' || role === 'admin') ? '/(tabs)/incidents' : null,
           tabBarIcon: ({ color }) => <Ionicons name="chatbubbles" size={24} color={color} />,
         }}
       />
-
+            {/* =========================================================
+          NHÓM 1: COMMON (Ai cũng thấy, hoặc ít nhất là Account)
+         ========================================================= */}
       <Tabs.Screen
         name="account"
         options={{
@@ -123,8 +140,21 @@ export default function TabLayout() {
         }}
       />
 
+      {/* =========================================================
+          NHÓM 4: ADMIN (Quản trị viên)
+          (Tạm thời dùng chung map với user, nhưng sau này có thể tách trang quản lý riêng)
+         ========================================================= */}
+      
+      {/* Ví dụ: Nếu Bình có trang quản lý user riêng cho admin */}
+      {/* <Tabs.Screen
+        name="admin-users"
+        options={{
+          title: 'QL User',
+          href: role === 'admin' ? '/(tabs)/admin-users' : null,
+          tabBarIcon: ({ color }) => <Ionicons name="people" size={24} color={color} />,
+        }}
+      /> */}
 
     </Tabs>
-
   );
 }

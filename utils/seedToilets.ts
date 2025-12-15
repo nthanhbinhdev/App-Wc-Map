@@ -18,7 +18,7 @@ const BATH_NAMES = [
   "Sauna & Spa", "Refresh Hub", "Clean & Fresh", "Eco Bath", "Urban Shower"
 ];
 
-// Danh sách ID tiện ích (khớp với AddFacility và UserMap)
+// Danh sách ID tiện ích
 const AMENITIES_POOL = [
   'hot_water', 'towel', 'soap', 'hair_dryer', 
   'locker', 'parking', 'wifi', 'wc',
@@ -34,31 +34,36 @@ const IMAGES = [
   'https://images.unsplash.com/photo-1560185007-cde436f6a4d0?w=600'
 ];
 
-export const seedDatabase = async () => {
+// Hàm này sẽ tạo cả Quán lẫn Phòng
+export const seedDatabase = async (providerEmail: string = 'admin_seed@wcmap.vn') => {
   const promises = [];
 
-  for (let i = 0; i < 50; i++) {
-    // 1. Chọn random quận
+  for (let i = 0; i < 10; i++) {
+    // Gọi hàm tạo từng quán một để dễ quản lý
+    promises.push(createToiletWithRooms(providerEmail, i));
+  }
+
+  await Promise.all(promises);
+};
+
+// Hàm helper để tạo 1 quán + 5 phòng
+const createToiletWithRooms = async (email: string, index: number) => {
+    // 1. Random thông tin quán
     const district = DISTRICTS[Math.floor(Math.random() * DISTRICTS.length)];
-    
-    // 2. Random tọa độ lệch một chút xung quanh tâm quận (khoảng 1-2km)
     const lat = district.lat + (Math.random() * 0.03 - 0.015);
     const lng = district.lng + (Math.random() * 0.03 - 0.015);
-    
-    // 3. Random tiện ích (Mỗi chỗ có 3-8 tiện ích)
     const randomAmenities = AMENITIES_POOL.filter(() => Math.random() > 0.6);
-    // Đảm bảo ít nhất có nước nóng (cho nó xịn :D)
     if (!randomAmenities.includes('hot_water')) randomAmenities.push('hot_water');
 
-    const data = {
-      name: `${BATH_NAMES[Math.floor(Math.random() * BATH_NAMES.length)]} ${district.name} #${i + 1}`,
+    const toiletData = {
+      name: `${BATH_NAMES[Math.floor(Math.random() * BATH_NAMES.length)]} ${district.name} #${index + 1}`,
       address: `Đường số ${Math.floor(Math.random() * 20) + 1}, ${district.name}, TP.HCM`,
-      price: Math.floor(Math.random() * 10) * 5000 + 10000, // Giá từ 10k - 60k
+      price: Math.floor(Math.random() * 10) * 5000 + 10000, 
       amenities: randomAmenities,
-      createdBy: 'admin_seed@wcmap.vn',
+      createdBy: email,
       status: 'approved',
-      rating: Number((3 + Math.random() * 2).toFixed(1)), // Rating từ 3.0 đến 5.0
-      ratingCount: Math.floor(Math.random() * 200) + 1, // Số lượt đánh giá ảo
+      rating: Number((3 + Math.random() * 2).toFixed(1)),
+      ratingCount: Math.floor(Math.random() * 200) + 1,
       latitude: lat,
       longitude: lng,
       type: 'bathhouse',
@@ -66,9 +71,32 @@ export const seedDatabase = async () => {
       image: IMAGES[Math.floor(Math.random() * IMAGES.length)]
     };
 
-    promises.push(addDoc(collection(db, "toilets"), data));
-  }
+    // 2. Lưu quán vào DB và lấy ID
+    const toiletRef = await addDoc(collection(db, "toilets"), toiletData);
 
-  // Chạy song song cho lẹ
-  await Promise.all(promises);
+    // 3. Tạo 5 phòng cho quán này (3 đơn, 2 đôi)
+    const roomsData = [
+        { type: 'single', num: '101', price: toiletData.price },
+        { type: 'single', num: '102', price: toiletData.price },
+        { type: 'single', num: '103', price: toiletData.price },
+        { type: 'couple', num: '201', price: toiletData.price * 1.5 },
+        { type: 'couple', num: '202', price: toiletData.price * 1.5 },
+    ];
+
+    const roomPromises = roomsData.map(r => 
+        addDoc(collection(db, 'rooms'), {
+            toiletId: toiletRef.id,
+            toiletName: toiletData.name,
+            roomNumber: r.num,
+            type: r.type,
+            status: 'available', // Phòng trống, sẵn sàng đặt
+            price: r.price,
+            amenities: ['hot_water', 'towel', 'soap'],
+            createdAt: new Date().toISOString(),
+            lastUpdated: new Date().toISOString()
+        })
+    );
+
+    // Chờ tạo xong hết phòng
+    await Promise.all(roomPromises);
 };
