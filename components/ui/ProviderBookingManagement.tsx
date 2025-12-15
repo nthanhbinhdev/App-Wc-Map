@@ -1,4 +1,4 @@
-// components/ui/ProviderBookingManagement.tsx
+// components/ui/ProviderBookingManagement.tsx - PHIÊN BẢN HOÀN THIỆN
 import { Ionicons } from "@expo/vector-icons";
 import {
   collection,
@@ -18,6 +18,7 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -37,33 +38,39 @@ interface Booking {
   bookingTime: string;
   toiletId: string;
   toiletName: string;
+  checkInTime?: string;
+  checkOutTime?: string;
 }
 
 export default function ProviderBookingManagement() {
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [filteredBookings, setFilteredBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<"active" | "history">("active");
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
 
+  // Search & Filter
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+
   const user = auth.currentUser;
 
-  // Debug log để xác nhận code mới đã được nạp
   useEffect(() => {
-    console.log("📢 COMPONENT MOUNTED - PHIÊN BẢN ĐÃ FIX LỖI 60 DISJUNCTIONS");
-  }, []);
+    fetchBookings();
+  }, [user, activeTab]);
 
-  // --- LOGIC MỚI: FETCH ONE-TIME & CHUNKING ---
+  useEffect(() => {
+    applyFilters();
+  }, [searchQuery, filterStatus, bookings]);
+
   const fetchBookings = async () => {
     if (!user) return;
     if (!refreshing) setLoading(true);
 
     try {
-      console.log("🚀 Bắt đầu quy trình tải Booking...");
-
       // 1. Lấy danh sách Toilet của Provider
-      // Bước này quan trọng để lọc booking theo toilet của chính provider đó
       const qToilets = query(
         collection(db, "toilets"),
         where("createdBy", "==", user.email)
@@ -73,9 +80,6 @@ export default function ProviderBookingManagement() {
       const toiletIds: string[] = [];
       toiletSnap.forEach((doc) => toiletIds.push(doc.id));
 
-      console.log(`✅ Tìm thấy ${toiletIds.length} nhà vệ sinh của bạn.`);
-
-      // Nếu không có toilet nào thì chắc chắn không có booking
       if (toiletIds.length === 0) {
         setBookings([]);
         setLoading(false);
@@ -83,24 +87,15 @@ export default function ProviderBookingManagement() {
         return;
       }
 
-      // 2. KỸ THUẬT CHUNKING (CHIA NHỎ)
-      // Firebase giới hạn toán tử 'in' tối đa 10 (đến 30) phần tử.
-      // Nếu có 60 toilet, ta phải chia thành 6 mảng con, mỗi mảng 10 ID.
+      // 2. Chunking để tránh lỗi 60 disjunctions
       const chunks = [];
-      const CHUNK_SIZE = 10; // Giữ ở mức 10 cho an toàn tuyệt đối
+      const CHUNK_SIZE = 10;
       for (let i = 0; i < toiletIds.length; i += CHUNK_SIZE) {
         chunks.push(toiletIds.slice(i, i + CHUNK_SIZE));
       }
 
-      console.log(
-        `📦 Đã chia ${toiletIds.length} IDs thành ${chunks.length} gói request nhỏ.`
-      );
-
-      // 3. Chạy song song các query nhỏ (Parallel Execution)
-      const promises = chunks.map((chunkIds, index) => {
-        // Log để kiểm tra từng gói
-        // console.log(`   - Gói ${index + 1}: Check ${chunkIds.length} toilets`);
-
+      // 3. Fetch bookings từ từng chunk
+      const promises = chunks.map((chunkIds) => {
         const q = query(
           collection(db, "bookings"),
           where("toiletId", "in", chunkIds)
@@ -110,7 +105,7 @@ export default function ProviderBookingManagement() {
 
       const snapshots = await Promise.all(promises);
 
-      // 4. Gộp kết quả từ các gói lại
+      // 4. Gộp kết quả
       const list: Booking[] = [];
       const activeStatuses = ["pending", "confirmed", "checked_in"];
       const historyStatuses = ["completed", "cancelled", "expired"];
@@ -120,7 +115,6 @@ export default function ProviderBookingManagement() {
           const data = doc.data();
           const status = data.status;
 
-          // Lọc Client-side theo Tab (Active hoặc History)
           let isValid = false;
           if (activeTab === "active") {
             if (activeStatuses.includes(status)) isValid = true;
@@ -143,6 +137,8 @@ export default function ProviderBookingManagement() {
               bookingTime: data.bookingTime,
               toiletId: data.toiletId,
               toiletName: data.toiletName,
+              checkInTime: data.checkInTime,
+              checkOutTime: data.checkOutTime,
             });
           }
         });
@@ -154,32 +150,44 @@ export default function ProviderBookingManagement() {
           new Date(b.bookingTime).getTime() - new Date(a.bookingTime).getTime()
       );
 
-      console.log(`🎉 Tải xong! Tổng cộng ${list.length} booking.`);
       setBookings(list);
     } catch (error: any) {
       console.error("❌ Lỗi Fetch Data:", error);
-      // Tiêu đề Alert này giúp Bình nhận biết code mới đã chạy
-      Alert.alert(
-        "Lỗi (Code Mới)",
-        "Chi tiết: " + (error.message || "Không xác định")
-      );
+      Alert.alert("Lỗi", error.message || "Không thể tải dữ liệu");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  useEffect(() => {
-    fetchBookings();
-  }, [user, activeTab]);
+  const applyFilters = () => {
+    let filtered = [...bookings];
+
+    // Filter by status
+    if (filterStatus !== "all") {
+      filtered = filtered.filter((b) => b.status === filterStatus);
+    }
+
+    // Search by name or phone
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (b) =>
+          b.userName.toLowerCase().includes(query) ||
+          b.userPhone.includes(query) ||
+          b.toiletName.toLowerCase().includes(query)
+      );
+    }
+
+    setFilteredBookings(filtered);
+  };
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchBookings();
   }, [activeTab]);
 
-  // --- CÁC HÀM XỬ LÝ ACTION (GIỮ NGUYÊN) ---
-
+  // Actions
   const handleCallCustomer = (phoneNumber: string) => {
     Linking.openURL(`tel:${phoneNumber}`);
   };
@@ -188,7 +196,7 @@ export default function ProviderBookingManagement() {
     Alert.alert("Hủy đặt chỗ", "Bạn có chắc muốn hủy đặt chỗ này?", [
       { text: "Không", style: "cancel" },
       {
-        text: "Hủy booking",
+        text: "Xác nhận hủy",
         style: "destructive",
         onPress: async () => {
           try {
@@ -196,10 +204,20 @@ export default function ProviderBookingManagement() {
               status: "cancelled",
               updatedAt: new Date().toISOString(),
             });
-            Alert.alert("Thành công", "Đã hủy booking");
+
+            // Giải phóng phòng nếu có
+            if (roomId && roomId !== "general") {
+              await updateDoc(doc(db, "rooms", roomId), {
+                status: "available",
+                currentBookingId: null,
+                lastUpdated: new Date().toISOString(),
+              });
+            }
+
+            Alert.alert("✅ Thành công", "Đã hủy booking");
             fetchBookings();
           } catch (error: any) {
-            Alert.alert("Lỗi", error.message);
+            Alert.alert("❌ Lỗi", error.message);
           }
         },
       },
@@ -207,10 +225,10 @@ export default function ProviderBookingManagement() {
   };
 
   const handleCheckIn = async (bookingId: string) => {
-    Alert.alert("Check-in", "Khách đã đến nơi?", [
+    Alert.alert("Check-in", "Xác nhận khách đã đến?", [
       { text: "Chưa", style: "cancel" },
       {
-        text: "Xác nhận",
+        text: "Đã đến",
         onPress: async () => {
           try {
             await updateDoc(doc(db, "bookings", bookingId), {
@@ -218,17 +236,17 @@ export default function ProviderBookingManagement() {
               checkInTime: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             });
-            Alert.alert("Thành công", "Khách đã check-in");
+            Alert.alert("✅ Check-in thành công");
             fetchBookings();
           } catch (e: any) {
-            Alert.alert("Lỗi", e.message);
+            Alert.alert("❌ Lỗi", e.message);
           }
         },
       },
     ]);
   };
 
-  const handleCheckOut = async (bookingId: string) => {
+  const handleCheckOut = async (bookingId: string, roomId: string) => {
     Alert.alert("Check-out", "Hoàn tất đơn hàng và nhận thanh toán?", [
       { text: "Chưa", style: "cancel" },
       {
@@ -241,10 +259,20 @@ export default function ProviderBookingManagement() {
               paymentStatus: "paid",
               updatedAt: new Date().toISOString(),
             });
-            Alert.alert("Thành công", "Đơn hàng hoàn tất");
+
+            // Giải phóng phòng
+            if (roomId && roomId !== "general") {
+              await updateDoc(doc(db, "rooms", roomId), {
+                status: "available",
+                currentBookingId: null,
+                lastUpdated: new Date().toISOString(),
+              });
+            }
+
+            Alert.alert("✅ Hoàn tất", "Đơn hàng đã hoàn thành");
             fetchBookings();
           } catch (e: any) {
-            Alert.alert("Lỗi", e.message);
+            Alert.alert("❌ Lỗi", e.message);
           }
         },
       },
@@ -266,7 +294,7 @@ export default function ProviderBookingManagement() {
   const getStatusLabel = (status: string) => {
     const labels: Record<string, string> = {
       pending: "Chờ xác nhận",
-      confirmed: "Đã giữ chỗ",
+      confirmed: "Đã xác nhận",
       checked_in: "Đang sử dụng",
       completed: "Hoàn thành",
       cancelled: "Đã hủy",
@@ -284,7 +312,7 @@ export default function ProviderBookingManagement() {
       }}
     >
       <View style={styles.cardHeader}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.roomNumber}>{item.toiletName}</Text>
           <Text style={styles.customerName}>
             {item.userName} - {item.roomNumber}
@@ -308,11 +336,18 @@ export default function ProviderBookingManagement() {
         <View style={styles.infoRow}>
           <Ionicons name="time" size={14} color="#666" />
           <Text style={styles.infoText}>
-            Booking:{" "}
-            {new Date(item.bookingTime).toLocaleTimeString("vi-VN", {
+            {new Date(item.bookingTime).toLocaleString("vi-VN", {
+              day: "2-digit",
+              month: "2-digit",
               hour: "2-digit",
               minute: "2-digit",
             })}
+          </Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Ionicons name="cash" size={14} color="#666" />
+          <Text style={styles.infoText}>
+            {item.totalPrice.toLocaleString()}đ
           </Text>
         </View>
       </View>
@@ -327,33 +362,57 @@ export default function ProviderBookingManagement() {
           </TouchableOpacity>
 
           {item.status === "pending" && (
-            <TouchableOpacity
-              onPress={() => handleCheckIn(item.id)}
-              style={[styles.miniBtn, { backgroundColor: "#E8F5E9" }]}
-            >
-              <Ionicons name="log-in" size={16} color="#2E7D32" />
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity
+                onPress={() => handleCheckIn(item.id)}
+                style={[styles.miniBtn, { backgroundColor: "#E8F5E9" }]}
+              >
+                <Ionicons name="log-in" size={16} color="#2E7D32" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => handleCancelBooking(item.id, item.roomNumber)}
+                style={[styles.miniBtn, { backgroundColor: "#FFEBEE" }]}
+              >
+                <Ionicons name="close" size={16} color="#C62828" />
+              </TouchableOpacity>
+            </>
           )}
 
           {item.status === "checked_in" && (
             <TouchableOpacity
-              onPress={() => handleCheckOut(item.id)}
+              onPress={() => handleCheckOut(item.id, item.roomNumber)}
               style={[styles.miniBtn, { backgroundColor: "#FFF3E0" }]}
             >
               <Ionicons name="checkmark-done" size={16} color="#EF6C00" />
             </TouchableOpacity>
           )}
-
-          {item.status === "pending" && (
-            <TouchableOpacity
-              onPress={() => handleCancelBooking(item.id, item.roomNumber)}
-              style={[styles.miniBtn, { backgroundColor: "#FFEBEE" }]}
-            >
-              <Ionicons name="close" size={16} color="#C62828" />
-            </TouchableOpacity>
-          )}
         </View>
       )}
+    </TouchableOpacity>
+  );
+
+  const StatusFilterChip = ({
+    status,
+    label,
+  }: {
+    status: string;
+    label: string;
+  }) => (
+    <TouchableOpacity
+      style={[
+        styles.filterChip,
+        filterStatus === status && styles.filterChipActive,
+      ]}
+      onPress={() => setFilterStatus(status)}
+    >
+      <Text
+        style={[
+          styles.filterChipText,
+          filterStatus === status && styles.filterChipTextActive,
+        ]}
+      >
+        {label}
+      </Text>
     </TouchableOpacity>
   );
 
@@ -375,6 +434,10 @@ export default function ProviderBookingManagement() {
             </Text>
             <Text style={styles.statLabel}>Đang dùng</Text>
           </View>
+          <View style={styles.statBox}>
+            <Text style={styles.statNumber}>{bookings.length}</Text>
+            <Text style={styles.statLabel}>Tổng</Text>
+          </View>
         </View>
       </View>
 
@@ -384,19 +447,35 @@ export default function ProviderBookingManagement() {
           style={[styles.tab, activeTab === "active" && styles.activeTab]}
           onPress={() => setActiveTab("active")}
         >
+          <Ionicons
+            name="time"
+            size={18}
+            color={activeTab === "active" ? "#2196F3" : "#666"}
+          />
           <Text
             style={[
               styles.tabText,
               activeTab === "active" && styles.activeTabText,
             ]}
           >
-            Đang hoạt động
+            Đang hoạt động (
+            {
+              bookings.filter((b) =>
+                ["pending", "confirmed", "checked_in"].includes(b.status)
+              ).length
+            }
+            )
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === "history" && styles.activeTab]}
           onPress={() => setActiveTab("history")}
         >
+          <Ionicons
+            name="archive"
+            size={18}
+            color={activeTab === "history" ? "#2196F3" : "#666"}
+          />
           <Text
             style={[
               styles.tabText,
@@ -408,16 +487,42 @@ export default function ProviderBookingManagement() {
         </TouchableOpacity>
       </View>
 
+      {/* Search & Filters */}
+      <View style={styles.searchSection}>
+        <View style={styles.searchBar}>
+          <Ionicons name="search" size={20} color="#999" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Tìm theo tên, SĐT, địa điểm..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
+              <Ionicons name="close-circle" size={20} color="#999" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {activeTab === "active" && (
+          <View style={styles.filterRow}>
+            <StatusFilterChip status="all" label="Tất cả" />
+            <StatusFilterChip status="pending" label="Chờ" />
+            <StatusFilterChip status="confirmed" label="Đã xác nhận" />
+            <StatusFilterChip status="checked_in" label="Đang dùng" />
+          </View>
+        )}
+      </View>
+
       {/* List */}
       {loading ? (
-        <ActivityIndicator
-          size="large"
-          color="#2196F3"
-          style={{ marginTop: 50 }}
-        />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#2196F3" />
+          <Text style={styles.loadingText}>Đang tải...</Text>
+        </View>
       ) : (
         <FlatList
-          data={bookings}
+          data={filteredBookings}
           renderItem={renderBookingItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContainer}
@@ -430,14 +535,18 @@ export default function ProviderBookingManagement() {
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Ionicons name="calendar-outline" size={48} color="#ccc" />
+              <Ionicons name="calendar-outline" size={64} color="#E0E0E0" />
               <Text style={styles.emptyText}>
-                {activeTab === "active"
+                {searchQuery
+                  ? "Không tìm thấy kết quả"
+                  : activeTab === "active"
                   ? "Chưa có khách đặt"
                   : "Chưa có lịch sử"}
               </Text>
-              <Text style={{ fontSize: 12, color: "#999", marginTop: 5 }}>
-                Kéo xuống để tải lại
+              <Text style={styles.emptySubtext}>
+                {searchQuery
+                  ? "Thử tìm kiếm với từ khóa khác"
+                  : "Kéo xuống để làm mới"}
               </Text>
             </View>
           }
@@ -461,18 +570,24 @@ export default function ProviderBookingManagement() {
             </View>
 
             {selectedBooking && (
-              <View>
+              <View style={styles.modalBody}>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Khách:</Text>
+                  <Text style={styles.detailLabel}>Khách hàng:</Text>
                   <Text style={styles.detailValue}>
                     {selectedBooking.userName}
                   </Text>
                 </View>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>SĐT:</Text>
-                  <Text style={styles.detailValue}>
-                    {selectedBooking.userPhone}
-                  </Text>
+                  <Text style={styles.detailLabel}>Số điện thoại:</Text>
+                  <TouchableOpacity
+                    onPress={() =>
+                      handleCallCustomer(selectedBooking.userPhone)
+                    }
+                  >
+                    <Text style={[styles.detailValue, { color: "#2196F3" }]}>
+                      {selectedBooking.userPhone}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Địa điểm:</Text>
@@ -481,11 +596,52 @@ export default function ProviderBookingManagement() {
                   </Text>
                 </View>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Tổng tiền:</Text>
+                  <Text style={styles.detailLabel}>Phòng:</Text>
                   <Text style={styles.detailValue}>
+                    {selectedBooking.roomNumber}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Tổng tiền:</Text>
+                  <Text
+                    style={[
+                      styles.detailValue,
+                      { color: "#4CAF50", fontWeight: "bold" },
+                    ]}
+                  >
                     {selectedBooking.totalPrice?.toLocaleString()}đ
                   </Text>
                 </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Thời gian đặt:</Text>
+                  <Text style={styles.detailValue}>
+                    {new Date(selectedBooking.bookingTime).toLocaleString(
+                      "vi-VN"
+                    )}
+                  </Text>
+                </View>
+
+                {selectedBooking.checkInTime && (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Check-in:</Text>
+                    <Text style={styles.detailValue}>
+                      {new Date(selectedBooking.checkInTime).toLocaleString(
+                        "vi-VN"
+                      )}
+                    </Text>
+                  </View>
+                )}
+
+                {selectedBooking.checkOutTime && (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Check-out:</Text>
+                    <Text style={styles.detailValue}>
+                      {new Date(selectedBooking.checkOutTime).toLocaleString(
+                        "vi-VN"
+                      )}
+                    </Text>
+                  </View>
+                )}
 
                 {selectedBooking.notes && (
                   <View style={styles.notesBox}>
@@ -497,9 +653,9 @@ export default function ProviderBookingManagement() {
                 )}
 
                 <View style={styles.qrBox}>
-                  <Text style={styles.qrLabel}>Mã Vé:</Text>
+                  <Text style={styles.qrLabel}>Mã Booking:</Text>
                   <Text style={styles.qrCode}>
-                    {selectedBooking.id.slice(0, 8).toUpperCase()}
+                    #{selectedBooking.id.slice(0, 8).toUpperCase()}
                   </Text>
                 </View>
               </View>
@@ -513,6 +669,8 @@ export default function ProviderBookingManagement() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F5F5" },
+
+  // Header
   header: {
     backgroundColor: "#2196F3",
     padding: 20,
@@ -531,25 +689,94 @@ const styles = StyleSheet.create({
   statBox: {
     flex: 1,
     backgroundColor: "white",
-    padding: 10,
+    padding: 12,
     borderRadius: 12,
     alignItems: "center",
-    elevation: 2,
   },
-  statNumber: { fontSize: 20, fontWeight: "bold", color: "#FF5722" },
-  statLabel: { fontSize: 12, color: "#666", marginTop: 2 },
+  statNumber: { fontSize: 24, fontWeight: "bold", color: "#FF5722" },
+  statLabel: { fontSize: 11, color: "#666", marginTop: 4 },
+
+  // Tabs
   tabs: {
     flexDirection: "row",
     backgroundColor: "white",
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
-    elevation: 1,
   },
-  tab: { flex: 1, alignItems: "center", paddingVertical: 15 },
-  activeTab: { borderBottomWidth: 2, borderBottomColor: "#2196F3" },
-  tabText: { fontWeight: "500", color: "#666" },
+  tab: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 15,
+    gap: 6,
+  },
+  activeTab: { borderBottomWidth: 3, borderBottomColor: "#2196F3" },
+  tabText: { fontWeight: "500", color: "#666", fontSize: 13 },
   activeTabText: { color: "#2196F3", fontWeight: "bold" },
-  listContainer: { padding: 15 },
+
+  // Search & Filter
+  searchSection: {
+    backgroundColor: "white",
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F5F5F5",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 45,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+  },
+  filterRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10,
+  },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: "#F5F5F5",
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+  },
+  filterChipActive: {
+    backgroundColor: "#2196F3",
+    borderColor: "#2196F3",
+  },
+  filterChipText: {
+    fontSize: 12,
+    color: "#666",
+    fontWeight: "500",
+  },
+  filterChipTextActive: {
+    color: "white",
+    fontWeight: "bold",
+  },
+
+  // Loading
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingTop: 100,
+  },
+  loadingText: {
+    marginTop: 10,
+    color: "#666",
+  },
+
+  // List
+  listContainer: { padding: 15, paddingBottom: 30 },
   bookingCard: {
     backgroundColor: "white",
     borderRadius: 12,
@@ -563,17 +790,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 10,
+    marginBottom: 12,
   },
-  roomNumber: { fontSize: 16, fontWeight: "bold", color: "#333" },
-  customerName: { fontSize: 13, color: "#666", marginTop: 2 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  roomNumber: { fontSize: 15, fontWeight: "bold", color: "#333" },
+  customerName: { fontSize: 13, color: "#666", marginTop: 4 },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
   statusText: { fontSize: 10, color: "white", fontWeight: "bold" },
-  cardBody: { marginBottom: 10 },
+  cardBody: { marginBottom: 12 },
   infoRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 5,
+    marginBottom: 6,
     gap: 8,
   },
   infoText: { fontSize: 13, color: "#555" },
@@ -581,23 +808,41 @@ const styles = StyleSheet.create({
   actionButtons: {
     flexDirection: "row",
     justifyContent: "flex-end",
-    gap: 10,
-    marginTop: 5,
+    gap: 8,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: "#f0f0f0",
-    paddingTop: 10,
   },
   miniBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: "center",
     alignItems: "center",
+    elevation: 1,
   },
 
-  emptyContainer: { alignItems: "center", marginTop: 50 },
-  emptyText: { textAlign: "center", color: "#999", marginTop: 10 },
+  // Empty
+  emptyContainer: {
+    alignItems: "center",
+    paddingTop: 80,
+    paddingHorizontal: 40,
+  },
+  emptyText: {
+    textAlign: "center",
+    color: "#666",
+    fontSize: 16,
+    fontWeight: "bold",
+    marginTop: 15,
+  },
+  emptySubtext: {
+    textAlign: "center",
+    color: "#999",
+    fontSize: 13,
+    marginTop: 8,
+  },
 
+  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -605,27 +850,37 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: "white",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     padding: 20,
-    maxHeight: "80%",
+    maxHeight: "85%",
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 20,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
   },
   modalTitle: { fontSize: 20, fontWeight: "bold", color: "#333" },
+  modalBody: {},
   detailRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
+    borderBottomColor: "#f5f5f5",
   },
-  detailLabel: { fontSize: 14, color: "#666" },
-  detailValue: { fontSize: 14, fontWeight: "bold", color: "#333" },
+  detailLabel: { fontSize: 14, color: "#666", flex: 1 },
+  detailValue: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    flex: 1,
+    textAlign: "right",
+  },
   notesBox: {
     backgroundColor: "#FFFDE7",
     padding: 12,
@@ -634,15 +889,15 @@ const styles = StyleSheet.create({
   },
   notesLabel: {
     fontSize: 12,
-    color: "#FBC02D",
+    color: "#F57F17",
     marginBottom: 5,
     fontWeight: "bold",
   },
-  notesText: { fontSize: 14, color: "#333", fontStyle: "italic" },
+  notesText: { fontSize: 14, color: "#333" },
   qrBox: {
     backgroundColor: "#E3F2FD",
-    padding: 12,
-    borderRadius: 8,
+    padding: 15,
+    borderRadius: 12,
     marginTop: 15,
     alignItems: "center",
   },
