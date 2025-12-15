@@ -18,7 +18,7 @@ export default function RootLayout() {
       if (initializing) setInitializing(false);
     });
     return unsubscribe;
-  }, []); // 👉 Quan trọng: Thêm [] để chỉ chạy 1 lần lúc mở app
+  }, []); 
 
   // 2. Điều hướng dựa trên trạng thái User
   useEffect(() => {

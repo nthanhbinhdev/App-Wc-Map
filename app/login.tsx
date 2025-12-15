@@ -229,8 +229,8 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={{ fontSize: 80, marginBottom: 20 }}>🚽</Text>
-      <Text style={styles.title}>WC MAP SÀI GÒN</Text>
+      <Text style={{ fontSize: 80, marginBottom: 20 }}>🏙️</Text>
+      <Text style={styles.title}>BATHHOUSES SÀI GÒN</Text>
 
       <TextInput
         style={styles.input}

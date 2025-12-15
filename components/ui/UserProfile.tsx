@@ -5,41 +5,37 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { auth, db } from '../../firebaseConfig';
+// 👉 Import hàm seed data
+import { seedDatabase } from '../../utils/seedToilets';
 
 export default function UserProfile() {
   const router = useRouter();
   const user = auth.currentUser;
 
-  // Dữ liệu thống kê
   const [stats, setStats] = useState({ contributions: 0, reviews: 0 });
   const [dataList, setDataList] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('contributions'); // contributions | reviews
+  const [activeTab, setActiveTab] = useState('contributions'); 
+  const [seeding, setSeeding] = useState(false); // State loading cho nút seed
 
-  // Modal states (Giữ nguyên logic cũ)
+  // Modal states
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [newName, setNewName] = useState(user?.displayName || '');
-  const [passModalVisible, setPassModalVisible] = useState(false);
-  const [currentPass, setCurrentPass] = useState('');
-  const [newPass, setNewPass] = useState('');
 
   const fetchData = async () => {
     if (!user) return;
     setLoading(true);
     try {
-      // 1. Đếm số WC đã thêm
       const qWC = query(collection(db, "toilets"), where("createdBy", "==", user.email));
       const snapWC = await getDocs(qWC);
       const wcCount = snapWC.size;
 
-      // 2. Đếm số Review
       const qRev = query(collection(db, "reviews"), where("userEmail", "==", user.email));
       const snapRev = await getDocs(qRev);
       const reviewCount = snapRev.size;
 
       setStats({ contributions: wcCount, reviews: reviewCount });
 
-      // 3. Lấy list dữ liệu theo Tab đang chọn
       const list: any[] = [];
       if (activeTab === 'contributions') {
         snapWC.forEach(doc => list.push({ id: doc.id, ...doc.data(), type: 'place' }));
@@ -62,8 +58,30 @@ export default function UserProfile() {
     } catch (error: any) { Alert.alert("Lỗi", error.message); }
   };
 
-  const handleChangePassword = async () => { /* Logic đổi pass giữ nguyên */ };
-  const handleLogout = () => { /* Logic logout giữ nguyên */ };
+  // 👉 HÀM GỌI SEED DATA
+  const handleSeedData = async () => {
+    Alert.alert(
+      "Xác nhận",
+      "Bạn có chắc muốn tạo 50 địa điểm giả không? Việc này sẽ ghi trực tiếp vào Database.",
+      [
+        { text: "Hủy", style: "cancel" },
+        { 
+          text: "Triển luôn!", 
+          onPress: async () => {
+            setSeeding(true);
+            try {
+              await seedDatabase();
+              Alert.alert("Xong!", "Đã tạo 50 nhà tắm thành công. Qua bản đồ check ngay!");
+            } catch (error: any) {
+              Alert.alert("Lỗi", error.message);
+            } finally {
+              setSeeding(false);
+            }
+          }
+        }
+      ]
+    );
+  };
 
   const renderItem = ({ item }: { item: any }) => {
     if (activeTab === 'contributions') {
@@ -97,7 +115,6 @@ export default function UserProfile() {
 
   return (
     <View style={styles.container}>
-      {/* Header Profile - Style Google Maps */}
       <View style={styles.profileHeader}>
         <Image
           source={{ uri: user?.photoURL || `https://ui-avatars.com/api/?name=${user?.displayName}&background=random` }}
@@ -129,9 +146,22 @@ export default function UserProfile() {
             <Ionicons name="log-out-outline" size={18} color="#333" />
           </TouchableOpacity>
         </View>
+
+        {/* 👉 NÚT SEED DATA (CHỈ DÙNG ĐỂ TEST) */}
+        <TouchableOpacity 
+          style={[styles.seedBtn, seeding && {opacity: 0.5}]} 
+          onPress={handleSeedData}
+          disabled={seeding}
+        >
+          {seeding ? (
+            <ActivityIndicator size="small" color="#D32F2F" />
+          ) : (
+            <Text style={styles.seedBtnText}>⚠️ TẠO 50 DATA MẪU</Text>
+          )}
+        </TouchableOpacity>
+
       </View>
 
-      {/* Tabs */}
       <View style={styles.tabs}>
         <TouchableOpacity onPress={() => setActiveTab('contributions')} style={[styles.tab, activeTab === 'contributions' && styles.activeTab]}>
           <Text style={[styles.tabText, activeTab === 'contributions' && styles.activeTabText]}>Đóng góp</Text>
@@ -151,7 +181,6 @@ export default function UserProfile() {
         />
       )}
 
-      {/* Modal Đổi tên (Giữ nguyên logic cũ nhưng style lại nếu cần) */}
       <Modal visible={editModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -185,6 +214,10 @@ const styles = StyleSheet.create({
   outlineBtn: { borderWidth: 1, borderColor: '#DADCE0', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20, flexDirection: 'row', alignItems: 'center' },
   btnText: { fontWeight: '500', color: '#3C4043' },
 
+  // Style cho nút Seed
+  seedBtn: { marginTop: 15, borderWidth: 1, borderColor: '#FFCDD2', backgroundColor: '#FFEBEE', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20 },
+  seedBtnText: { color: '#D32F2F', fontWeight: 'bold', fontSize: 12 },
+
   tabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#eee' },
   tab: { flex: 1, alignItems: 'center', paddingVertical: 12 },
   activeTab: { borderBottomWidth: 2, borderBottomColor: '#1A73E8' },
@@ -197,7 +230,6 @@ const styles = StyleSheet.create({
   cardSub: { color: '#5F6368', fontSize: 13, marginVertical: 2 },
   status: { fontSize: 12, fontWeight: '500' },
 
-  // Modal Styles
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 30 },
   modalContent: { backgroundColor: 'white', padding: 20, borderRadius: 15, elevation: 10 },
   modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },

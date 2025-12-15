@@ -21,6 +21,24 @@ const formatDistance = (meters: any) => {
   return `${(meters / 1000).toFixed(1)} km`;
 };
 
+// 👉 BẢNG DỊCH TIỆN ÍCH SANG TIẾNG VIỆT
+const AMENITY_LABELS: Record<string, string> = {
+  'hot_water': 'Nước nóng',
+  'towel': 'Khăn tắm',
+  'soap': 'Dầu gội/Sữa tắm',
+  'hair_dryer': 'Máy sấy',
+  'locker': 'Tủ đồ',
+  'parking': 'Gửi xe',
+  'wifi': 'Wifi Free',
+  'wc': 'Nhà vệ sinh',
+  'sauna': 'Xông hơi',
+  'massage': 'Massage',
+  'laundry': 'Giặt ủi',
+  'shop': 'Tạp hóa',
+  'charge': 'Sạc ĐT',
+  'accessible': 'Lối xe lăn'
+};
+
 interface ToiletDetailModalProps {
   visible: boolean;
   onClose: () => void;
@@ -33,14 +51,12 @@ export default function ToiletDetailModal({ visible, onClose, toilet }: ToiletDe
   const [myRating, setMyRating] = useState(0);
   const [isWritingReview, setIsWritingReview] = useState(false);
 
-  // Reset khi mở modal mới
   useEffect(() => {
     setMyRating(0);
     setReviewText('');
     setIsWritingReview(false);
   }, [toilet]);
 
-  // Lắng nghe danh sách Review từ Firebase
   useEffect(() => {
     if (!toilet) return;
     const q = query(
@@ -56,20 +72,48 @@ export default function ToiletDetailModal({ visible, onClose, toilet }: ToiletDe
     return () => unsubscribe();
   }, [toilet]);
 
-  const handleCheckIn = async () => {
+  // LOGIC SỬ DỤNG DỊCH VỤ / THANH TOÁN
+  const handleUsageRequest = () => {
     const user = auth.currentUser;
     if (!user) {
-      Alert.alert("Lỗi", "Bạn cần đăng nhập!");
+      Alert.alert("Lỗi", "Bạn cần đăng nhập để sử dụng dịch vụ!");
       return;
     }
+
+    Alert.alert(
+      "Sử dụng dịch vụ",
+      `Bạn muốn check-in tại "${toilet.name}"?\nPhí dịch vụ: ${Number(toilet.price).toLocaleString()}đ`,
+      [
+        { text: "Hủy", style: "cancel" },
+        { 
+          text: "💳 Check-in & Thanh toán", 
+          onPress: () => {
+             // Giả lập thanh toán
+             Alert.alert("Đang xử lý...", "Đang kết nối ví điện tử...", [
+               { text: "Thanh toán thành công", onPress: () => processCheckIn("Ví điện tử") }
+             ]);
+          }
+        }
+      ]
+    );
+  };
+
+  const processCheckIn = async (method: string) => {
+    const user = auth.currentUser;
     try {
       await addDoc(collection(db, "history"), {
-        email: user.email,
+        email: user?.email,
         wcName: toilet.name,
         price: toilet.price,
-        time: new Date().toLocaleString()
+        paymentMethod: method,
+        type: "bath_service",
+        time: new Date().toISOString() 
       });
-      Alert.alert("✅ Check-in thành công", "Cửa đã mở! Chúc bạn... nhẹ lòng!");
+      
+      Alert.alert(
+        "✅ Check-in Thành công", 
+        `Mã vé của bạn: #BATH-${Math.floor(Math.random()*1000)}\nVui lòng đưa mã này cho nhân viên để nhận khăn tắm và tủ đồ.`
+      );
     } catch (error: any) {
       Alert.alert("Lỗi", error.message);
     }
@@ -84,7 +128,6 @@ export default function ToiletDetailModal({ visible, onClose, toilet }: ToiletDe
     if (!user) return;
 
     try {
-      // 1. Lưu Review chi tiết
       await addDoc(collection(db, "reviews"), {
         toiletId: toilet.id,
         userEmail: user.email,
@@ -95,7 +138,6 @@ export default function ToiletDetailModal({ visible, onClose, toilet }: ToiletDe
         createdAt: new Date().toISOString()
       });
 
-      // 2. Cập nhật điểm trung bình cho WC
       const currentRating = toilet.rating || 5.0;
       const currentCount = toilet.ratingCount || 1;
       const newRating = ((currentRating * currentCount) + myRating) / (currentCount + 1);
@@ -116,11 +158,11 @@ export default function ToiletDetailModal({ visible, onClose, toilet }: ToiletDe
   };
 
   const handleReport = () => {
-    Alert.alert("Báo cáo", "Vui lòng chọn vấn đề:", [
+    Alert.alert("Báo cáo sự cố", "Vấn đề bạn gặp phải?", [
       { text: "Hủy", style: "cancel" },
-      { text: "Sai thông tin", onPress: () => sendReport("Sai thông tin") },
-      { text: "Đã đóng cửa", onPress: () => sendReport("Đã đóng cửa") },
-      { text: "Vấn đề vệ sinh", onPress: () => sendReport("Vấn đề vệ sinh") },
+      { text: "Hết nước nóng", onPress: () => sendReport("Hết nước nóng") },
+      { text: "Phòng bẩn/Hôi", onPress: () => sendReport("Vấn đề vệ sinh") },
+      { text: "Hỏng thiết bị", onPress: () => sendReport("Hỏng thiết bị") },
     ]);
   };
 
@@ -143,7 +185,6 @@ export default function ToiletDetailModal({ visible, onClose, toilet }: ToiletDe
   return (
     <Modal animationType="slide" visible={visible} onRequestClose={onClose}>
       <SafeAreaView style={styles.container}>
-        {/* Header điều hướng */}
         <View style={styles.headerNav}>
           <TouchableOpacity onPress={onClose} style={styles.backButton}>
              <Ionicons name="arrow-back" size={24} color="#333" />
@@ -153,9 +194,8 @@ export default function ToiletDetailModal({ visible, onClose, toilet }: ToiletDe
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
-            {/* Ảnh bìa */}
             <Image 
-                source={{ uri: toilet.image || 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=600' }} 
+                source={{ uri: toilet.image || 'https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?w=600' }} 
                 style={styles.heroImage} 
             />
 
@@ -170,51 +210,54 @@ export default function ToiletDetailModal({ visible, onClose, toilet }: ToiletDe
                    </View>
                    <Text style={styles.ratingCount}>({toilet.ratingCount || 1} đánh giá)</Text>
                 </View>
-                <Text style={styles.subtitle}>Nhà vệ sinh công cộng • {formatDistance(toilet.distance)}</Text>
+                <Text style={styles.subtitle}>Dịch vụ nhà tắm công cộng • {formatDistance(toilet.distance)}</Text>
             </View>
 
-            {/* ACTION BUTTONS - Style Google Maps */}
+            {/* ACTION BUTTONS */}
             <View style={styles.actionRow}>
-                <TouchableOpacity style={styles.actionBtn} onPress={handleCheckIn}>
-                    <View style={[styles.actionIconCircle, {backgroundColor: '#1A73E8'}]}>
-                       <Ionicons name="qr-code" size={24} color="white" />
+                <TouchableOpacity style={styles.actionBtn} onPress={handleUsageRequest}>
+                    <View style={[styles.actionIconCircle, {backgroundColor: '#0288D1'}]}>
+                       <Ionicons name="ticket" size={24} color="white" />
                     </View>
-                    <Text style={[styles.actionLabel, {color: '#1A73E8'}]}>Check-in</Text>
+                    <Text style={[styles.actionLabel, {color: '#0288D1', fontWeight: 'bold'}]}>Mua vé</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.actionBtn} onPress={() => { /* Logic chỉ đường cũ */ }}>
+                <TouchableOpacity style={styles.actionBtn} onPress={() => {}}>
                     <View style={styles.actionIconCircle}>
-                       <Ionicons name="navigate" size={24} color="#1A73E8" />
+                       <Ionicons name="navigate" size={24} color="#0288D1" />
                     </View>
                     <Text style={styles.actionLabel}>Chỉ đường</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.actionBtn} onPress={handleReport}>
                     <View style={styles.actionIconCircle}>
-                       <Ionicons name="warning-outline" size={24} color="#D93025" />
+                       <Ionicons name="construct" size={24} color="#D93025" />
                     </View>
-                    <Text style={styles.actionLabel}>Báo lỗi</Text>
+                    <Text style={styles.actionLabel}>Báo hỏng</Text>
                 </TouchableOpacity>
             </View>
 
             <View style={styles.divider} />
 
-            {/* Phần thông tin thêm */}
             <View style={styles.section}>
                <View style={styles.infoRow}>
                   <Ionicons name="location-outline" size={20} color="#555" style={{marginRight: 10}}/>
                   <Text style={styles.infoText}>{toilet.address}</Text>
                </View>
                <View style={styles.infoRow}>
-                  <Ionicons name="cash-outline" size={20} color="#555" style={{marginRight: 10}}/>
-                  <Text style={styles.infoText}>{toilet.price === 0 ? "Miễn phí" : `${Number(toilet.price).toLocaleString()}đ`}</Text>
+                  <Ionicons name="pricetag-outline" size={20} color="#555" style={{marginRight: 10}}/>
+                  <Text style={styles.infoText}>{toilet.price === 0 ? "Miễn phí" : `${Number(toilet.price).toLocaleString()}đ / lượt`}</Text>
                </View>
-               {/* Tiện ích */}
+               <View style={styles.infoRow}>
+                  <Ionicons name="time-outline" size={20} color="#555" style={{marginRight: 10}}/>
+                  <Text style={styles.infoText}>Mở cửa: 05:30 - 23:00</Text>
+               </View>
                {toilet.amenities && (
                  <View style={styles.chipContainer}>
                     {toilet.amenities.map((am: string) => (
                       <View key={am} style={styles.chip}>
-                        <Text style={styles.chipText}>{am}</Text>
+                        {/* 👉 HIỂN THỊ TÊN TIẾNG VIỆT TỪ BẢNG DỊCH */}
+                        <Text style={styles.chipText}>{AMENITY_LABELS[am] || am}</Text>
                       </View>
                     ))}
                  </View>
@@ -223,11 +266,9 @@ export default function ToiletDetailModal({ visible, onClose, toilet }: ToiletDe
 
             <View style={styles.divider} />
 
-            {/* PHẦN ĐÁNH GIÁ CỦA CỘNG ĐỒNG */}
             <View style={styles.section}>
-                <Text style={styles.sectionHeader}>Bài đánh giá</Text>
+                <Text style={styles.sectionHeader}>Đánh giá trải nghiệm</Text>
                 
-                {/* Khu vực viết đánh giá */}
                 {!isWritingReview ? (
                    <TouchableOpacity style={styles.writeReviewBtn} onPress={() => setIsWritingReview(true)}>
                       <View style={styles.userAvatarSmall} /> 
@@ -235,12 +276,12 @@ export default function ToiletDetailModal({ visible, onClose, toilet }: ToiletDe
                         <View style={{flexDirection:'row'}}>
                           {[1,2,3,4,5].map(i => <Ionicons key={i} name="star-outline" size={16} color="#888" />)}
                         </View>
-                        <Text style={{color:'#666', marginLeft: 10}}>Chạm để xếp hạng...</Text>
+                        <Text style={{color:'#666', marginLeft: 10}}>Dịch vụ có tốt không?</Text>
                       </View>
                    </TouchableOpacity>
                 ) : (
                   <View style={styles.reviewForm}>
-                    <Text style={{marginBottom: 10, fontWeight: 'bold'}}>Trải nghiệm của bạn thế nào?</Text>
+                    <Text style={{marginBottom: 10, fontWeight: 'bold'}}>Chất lượng nhà tắm thế nào?</Text>
                     <View style={{flexDirection: 'row', justifyContent: 'center', marginBottom: 15}}>
                        {[1,2,3,4,5].map(star => (
                          <TouchableOpacity key={star} onPress={() => setMyRating(star)} style={{padding: 5}}>
@@ -250,7 +291,7 @@ export default function ToiletDetailModal({ visible, onClose, toilet }: ToiletDe
                     </View>
                     <TextInput 
                       style={styles.reviewInput} 
-                      placeholder="Chia sẻ thêm về trải nghiệm..." 
+                      placeholder="Sạch sẽ, nước mạnh, đầy đủ đồ dùng..." 
                       multiline 
                       value={reviewText}
                       onChangeText={setReviewText}
@@ -260,13 +301,12 @@ export default function ToiletDetailModal({ visible, onClose, toilet }: ToiletDe
                         <Text style={{color: '#666'}}>Hủy</Text>
                       </TouchableOpacity>
                       <TouchableOpacity onPress={submitReview} style={styles.postBtn}>
-                        <Text style={{color: 'white', fontWeight: 'bold'}}>Đăng</Text>
+                        <Text style={{color: 'white', fontWeight: 'bold'}}>Gửi đánh giá</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
                 )}
 
-                {/* Danh sách review */}
                 {reviews.map((rev) => (
                   <View key={rev.id} style={styles.reviewItem}>
                     <Image 
@@ -300,7 +340,6 @@ const styles = StyleSheet.create({
   headerTitle: { flex: 1, fontSize: 18, fontWeight: 'bold', marginLeft: 10 },
   scrollContent: { paddingBottom: 20 },
   heroImage: { width: '100%', height: 200, resizeMode: 'cover' },
-  
   section: { padding: 20 },
   title: { fontSize: 24, fontWeight: 'bold', color: '#202124' },
   subtitle: { color: '#5F6368', marginTop: 4 },
@@ -308,37 +347,24 @@ const styles = StyleSheet.create({
   ratingBig: { fontSize: 16, fontWeight: 'bold', color: '#202124', marginRight: 5 },
   stars: { flexDirection: 'row', marginRight: 5 },
   ratingCount: { color: '#5F6368' },
-
-  // Action Buttons kiểu Google Maps
   actionRow: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#eee' },
   actionBtn: { alignItems: 'center', width: 80 },
-  actionIconCircle: { 
-    width: 40, height: 40, borderRadius: 20, 
-    borderWidth: 1, borderColor: '#DADCE0', 
-    justifyContent: 'center', alignItems: 'center', marginBottom: 5 
-  },
-  actionLabel: { fontSize: 12, color: '#1A73E8', fontWeight: '500' },
-
+  actionIconCircle: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: '#DADCE0', justifyContent: 'center', alignItems: 'center', marginBottom: 5 },
+  actionLabel: { fontSize: 12, color: '#0288D1', fontWeight: '500' },
   divider: { height: 8, backgroundColor: '#F0F2F5' },
-
   infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
   infoText: { fontSize: 15, color: '#3C4043', flex: 1 },
-  
   chipContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 5 },
   chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: '#DADCE0' },
   chipText: { fontSize: 12, color: '#3C4043' },
-
-  // Review Styles
   sectionHeader: { fontSize: 18, fontWeight: 'bold', color: '#202124', marginBottom: 15 },
   writeReviewBtn: { flexDirection: 'row', alignItems: 'center' },
   userAvatarSmall: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#ddd', marginRight: 10 },
   fakeInput: { flex: 1, padding: 10, borderWidth: 1, borderColor: '#DADCE0', borderRadius: 20, flexDirection: 'row', alignItems: 'center' },
-  
   reviewForm: { padding: 15, borderWidth: 1, borderColor: '#eee', borderRadius: 10 },
   reviewInput: { borderWidth: 1, borderColor: '#DADCE0', borderRadius: 5, padding: 10, height: 80, textAlignVertical: 'top', marginBottom: 15 },
   cancelBtn: { padding: 10 },
-  postBtn: { backgroundColor: '#1A73E8', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
-
+  postBtn: { backgroundColor: '#0288D1', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
   reviewItem: { flexDirection: 'row', marginTop: 20 },
   reviewerAvatar: { width: 32, height: 32, borderRadius: 16, marginRight: 10 },
   reviewerName: { fontWeight: 'bold', fontSize: 14, color: '#202124' },

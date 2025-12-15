@@ -3,7 +3,6 @@ import * as Location from 'expo-location';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-// 👉 Sửa đường dẫn import (lùi 3 cấp để tìm firebaseConfig, lùi 1 cấp tìm Modal)
 import { db } from '../../firebaseConfig';
 import ToiletDetailModal from '../ToiletDetailModal';
 
@@ -95,7 +94,7 @@ export default function ToiletList() {
         <View style={styles.dashedLine} />
         <View style={styles.footerRow}>
           <View>
-            <Text style={[styles.cardPrice, { color: item.price === 0 ? '#4CAF50' : '#2196F3' }]}>
+            <Text style={[styles.cardPrice, { color: item.price === 0 ? '#4CAF50' : '#0288D1' }]}>
               {item.price === 0 ? "MIỄN PHÍ" : `${Number(item.price).toLocaleString()}đ`}
             </Text>
             <View style={styles.distanceBadge}>
@@ -116,10 +115,11 @@ export default function ToiletList() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Gần bạn nhất</Text>
+        {/* Đổi tiêu đề cho đúng context Nhà tắm */}
+        <Text style={styles.headerTitle}>Địa điểm tắm gần bạn 🚿</Text>
       </View>
       {loading ? (
-        <ActivityIndicator size="large" color="#2196F3" style={{ marginTop: 50 }} />
+        <ActivityIndicator size="large" color="#0288D1" style={{ marginTop: 50 }} />
       ) : (
         <FlatList
           data={sortedToilets}
@@ -128,7 +128,7 @@ export default function ToiletList() {
           numColumns={2}
           contentContainerStyle={styles.listContainer}
           columnWrapperStyle={styles.columnWrapper}
-          ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 50, color: 'gray' }}>Chưa tìm thấy...</Text>}
+          ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 50, color: 'gray' }}>Chưa tìm thấy địa điểm nào...</Text>}
         />
       )}
       <ToiletDetailModal visible={modalVisible} toilet={selectedWC} onClose={() => setModalVisible(false)} />
@@ -139,7 +139,7 @@ export default function ToiletList() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F2F4F8', paddingTop: 50 },
   header: { paddingHorizontal: 20, marginBottom: 15 },
-  headerTitle: { fontSize: 26, fontWeight: '800', color: '#1A1A1A' },
+  headerTitle: { fontSize: 24, fontWeight: '800', color: '#1A1A1A' },
   listContainer: { paddingHorizontal: 12, paddingBottom: 20 },
   columnWrapper: { justifyContent: 'space-between' },
   card: {
@@ -158,5 +158,5 @@ const styles = StyleSheet.create({
   cardPrice: { fontSize: 13, fontWeight: '900', marginBottom: 4 },
   distanceBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF0E6', alignSelf: 'flex-start', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   distanceText: { fontSize: 11, fontWeight: 'bold', color: '#FF5722', marginLeft: 3 },
-  navigateBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#2196F3', justifyContent: 'center', alignItems: 'center', shadowColor: "#2196F3", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3, elevation: 3 },
+  navigateBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#0288D1', justifyContent: 'center', alignItems: 'center', shadowColor: "#0288D1", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3, elevation: 3 },
 });
