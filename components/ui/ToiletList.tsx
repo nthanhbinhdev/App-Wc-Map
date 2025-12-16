@@ -63,7 +63,7 @@ const isOpenNow = () => {
 // 👉 CẤU HÌNH BỘ LỌC
 // type: 'sort' (chọn 1) hoặc 'filter' (chọn nhiều)
 const FILTER_OPTIONS = [
-  { id: "sort_distance", label: "Gần tôi 🏃", type: "sort" },
+  { id: "sort_distance", label: "Gần tôi", type: "sort" },
   { id: "filter_available", label: "Còn phòng", type: "filter" },
   { id: "sort_price", label: "Giá tốt", type: "sort" },
   { id: "sort_rating", label: "Đánh giá cao", type: "sort" },
@@ -257,7 +257,7 @@ export default function ToiletList() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Địa điểm tắm gần bạn 🚿</Text>
+        <Text style={styles.headerTitle}>Địa điểm tắm gần bạn</Text>
       </View>
 
       {/* 👉 THANH BỘ LỌC ĐA NĂNG */}

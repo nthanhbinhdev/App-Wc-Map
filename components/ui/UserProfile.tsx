@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { auth, db } from "../../firebaseConfig";
 import ProviderAccount from "./ProviderAccount";
-import UserAccountComponent from "./UserAccountComponent"; // Component cũ cho user
+import UserAccountComponent from "./account/UserAccountComponent"; // Component cũ cho user
 
 export default function UserProfile() {
   const [userRole, setUserRole] = useState<"user" | "provider" | null>(null);

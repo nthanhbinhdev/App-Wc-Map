@@ -423,7 +423,7 @@ export default function ProviderDashboard() {
           <>
             {/* Header */}
             <View style={styles.header}>
-              <Text style={styles.headerTitle}>Dashboard Kinh Doanh 📊</Text>
+              <Text style={styles.headerTitle}>Dashboard Kinh Doanh</Text>
               <TouchableOpacity
                 onPress={navigateToAddFacility}
                 style={styles.addBtn}
