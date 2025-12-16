@@ -1,4 +1,3 @@
-// components/ui/ProviderBookingManagement.tsx - PHIÊN BẢN HOÀN THIỆN
 import { Ionicons } from "@expo/vector-icons";
 import {
   collection,
@@ -6,7 +5,7 @@ import {
   getDocs,
   query,
   updateDoc,
-  where,
+  where
 } from "firebase/firestore";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -29,6 +28,7 @@ interface Booking {
   userName: string;
   userPhone: string;
   roomNumber: string;
+  roomId?: string;
   estimatedArrival: string;
   expiryTime: string;
   status: string;
@@ -50,30 +50,40 @@ export default function ProviderBookingManagement() {
   const [activeTab, setActiveTab] = useState<"active" | "history">("active");
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [currentUser, setCurrentUser] = useState(auth.currentUser);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
-  const user = auth.currentUser;
+  // 👉 Fix: Lắng nghe auth state để đảm bảo user không bị null lúc mới vào app
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      setCurrentUser(user);
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
-    fetchBookings();
-  }, [user, activeTab]);
+    if (currentUser) {
+      fetchBookings();
+    }
+  }, [currentUser, activeTab]);
 
+  // Tự động filter lại khi bookings thay đổi
   useEffect(() => {
     applyFilters();
   }, [searchQuery, filterStatus, bookings]);
 
-  const fetchBookings = async () => {
-    if (!user) return;
-    if (!refreshing) setLoading(true);
+  const fetchBookings = async (showLoading = true) => {
+    if (!currentUser) return;
+
+    if (showLoading && !refreshing) setLoading(true);
 
     try {
-      // 1. Lấy danh sách Toilet của Provider
       const qToilets = query(
         collection(db, "toilets"),
-        where("createdBy", "==", user.email)
+        where("createdBy", "==", currentUser.email)
       );
 
       const toiletSnap = await getDocs(qToilets);
@@ -87,14 +97,13 @@ export default function ProviderBookingManagement() {
         return;
       }
 
-      // 2. Chunking để tránh lỗi 60 disjunctions
+      // Chia nhỏ query vì Firestore giới hạn 'in' query tối đa 10 phần tử
       const chunks = [];
       const CHUNK_SIZE = 10;
       for (let i = 0; i < toiletIds.length; i += CHUNK_SIZE) {
         chunks.push(toiletIds.slice(i, i + CHUNK_SIZE));
       }
 
-      // 3. Fetch bookings từ từng chunk
       const promises = chunks.map((chunkIds) => {
         const q = query(
           collection(db, "bookings"),
@@ -105,7 +114,6 @@ export default function ProviderBookingManagement() {
 
       const snapshots = await Promise.all(promises);
 
-      // 4. Gộp kết quả
       const list: Booking[] = [];
       const activeStatuses = ["pending", "confirmed", "checked_in"];
       const historyStatuses = ["completed", "cancelled", "expired"];
@@ -125,16 +133,23 @@ export default function ProviderBookingManagement() {
           if (isValid) {
             list.push({
               id: doc.id,
-              userName: data.userName,
-              userPhone: data.userPhone,
+              userName: data.userName || data.guestName || "Khách ẩn danh", // 👉 Fallback tên
+              userPhone: data.userPhone || data.guestPhone || "",
               roomNumber: data.roomNumber,
-              estimatedArrival: data.estimatedArrival,
+              roomId: data.roomId,
+              // 👉 Fix: Fallback field name giữa các phiên bản app
+              estimatedArrival:
+                data.estimatedArrival ||
+                data.expectedArrival ||
+                new Date().toISOString(),
               expiryTime: data.expiryTime,
               status: data.status,
               qrCode: data.qrCode,
               totalPrice: data.totalPrice,
-              notes: data.notes,
-              bookingTime: data.bookingTime,
+              notes: data.notes || data.note, // 👉 Fallback note
+              // 👉 QUAN TRỌNG: Fix lỗi crash Date do lệch tên (createdAt vs bookingTime)
+              bookingTime:
+                data.bookingTime || data.createdAt || new Date().toISOString(),
               toiletId: data.toiletId,
               toiletName: data.toiletName,
               checkInTime: data.checkInTime,
@@ -144,16 +159,18 @@ export default function ProviderBookingManagement() {
         });
       });
 
-      // Sắp xếp: Mới nhất lên đầu
-      list.sort(
-        (a, b) =>
-          new Date(b.bookingTime).getTime() - new Date(a.bookingTime).getTime()
-      );
+      // Sort an toàn hơn
+      list.sort((a, b) => {
+        const timeA = new Date(a.bookingTime).getTime() || 0;
+        const timeB = new Date(b.bookingTime).getTime() || 0;
+        return timeB - timeA;
+      });
 
       setBookings(list);
     } catch (error: any) {
       console.error("❌ Lỗi Fetch Data:", error);
-      Alert.alert("Lỗi", error.message || "Không thể tải dữ liệu");
+      if (showLoading)
+        Alert.alert("Lỗi", error.message || "Không thể tải dữ liệu");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -163,12 +180,10 @@ export default function ProviderBookingManagement() {
   const applyFilters = () => {
     let filtered = [...bookings];
 
-    // Filter by status
     if (filterStatus !== "all") {
       filtered = filtered.filter((b) => b.status === filterStatus);
     }
 
-    // Search by name or phone
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
@@ -184,15 +199,31 @@ export default function ProviderBookingManagement() {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchBookings();
-  }, [activeTab]);
+    fetchBookings(true);
+  }, [activeTab, currentUser]);
 
-  // Actions
   const handleCallCustomer = (phoneNumber: string) => {
+    if (!phoneNumber) {
+      Alert.alert("Lỗi", "Không có số điện thoại khách hàng");
+      return;
+    }
     Linking.openURL(`tel:${phoneNumber}`);
   };
 
-  const handleCancelBooking = async (bookingId: string, roomId: string) => {
+  // Helper để update state cục bộ ngay lập tức (Optimistic Update)
+  const optimisticUpdateStatus = (
+    bookingId: string,
+    newStatus: string,
+    extraData = {}
+  ) => {
+    setBookings((prevBookings) =>
+      prevBookings.map((b) =>
+        b.id === bookingId ? { ...b, status: newStatus, ...extraData } : b
+      )
+    );
+  };
+
+  const handleCancelBooking = async (bookingId: string, roomId?: string) => {
     Alert.alert("Hủy đặt chỗ", "Bạn có chắc muốn hủy đặt chỗ này?", [
       { text: "Không", style: "cancel" },
       {
@@ -200,24 +231,26 @@ export default function ProviderBookingManagement() {
         style: "destructive",
         onPress: async () => {
           try {
+            optimisticUpdateStatus(bookingId, "cancelled");
+
             await updateDoc(doc(db, "bookings", bookingId), {
               status: "cancelled",
               updatedAt: new Date().toISOString(),
             });
 
-            // Giải phóng phòng nếu có
             if (roomId && roomId !== "general") {
               await updateDoc(doc(db, "rooms", roomId), {
                 status: "available",
                 currentBookingId: null,
                 lastUpdated: new Date().toISOString(),
-              });
+              }).catch((e) => console.warn("Lỗi update phòng (bỏ qua):", e));
             }
 
             Alert.alert("✅ Thành công", "Đã hủy booking");
-            fetchBookings();
+            fetchBookings(false);
           } catch (error: any) {
             Alert.alert("❌ Lỗi", error.message);
+            fetchBookings(true);
           }
         },
       },
@@ -231,28 +264,38 @@ export default function ProviderBookingManagement() {
         text: "Đã đến",
         onPress: async () => {
           try {
+            optimisticUpdateStatus(bookingId, "checked_in", {
+              checkInTime: new Date().toISOString(),
+            });
+
             await updateDoc(doc(db, "bookings", bookingId), {
               status: "checked_in",
               checkInTime: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             });
             Alert.alert("✅ Check-in thành công");
-            fetchBookings();
+            fetchBookings(false);
           } catch (e: any) {
             Alert.alert("❌ Lỗi", e.message);
+            fetchBookings(true);
           }
         },
       },
     ]);
   };
 
-  const handleCheckOut = async (bookingId: string, roomId: string) => {
+  const handleCheckOut = async (bookingId: string, roomId?: string) => {
     Alert.alert("Check-out", "Hoàn tất đơn hàng và nhận thanh toán?", [
       { text: "Chưa", style: "cancel" },
       {
         text: "Hoàn tất",
         onPress: async () => {
           try {
+            optimisticUpdateStatus(bookingId, "completed", {
+              paymentStatus: "paid",
+              checkOutTime: new Date().toISOString(),
+            });
+
             await updateDoc(doc(db, "bookings", bookingId), {
               status: "completed",
               checkOutTime: new Date().toISOString(),
@@ -260,19 +303,25 @@ export default function ProviderBookingManagement() {
               updatedAt: new Date().toISOString(),
             });
 
-            // Giải phóng phòng
             if (roomId && roomId !== "general") {
               await updateDoc(doc(db, "rooms", roomId), {
                 status: "available",
                 currentBookingId: null,
                 lastUpdated: new Date().toISOString(),
+              }).catch((roomError) => {
+                console.warn(
+                  "Lỗi dọn phòng (không ảnh hưởng booking):",
+                  roomError
+                );
               });
             }
 
             Alert.alert("✅ Hoàn tất", "Đơn hàng đã hoàn thành");
-            fetchBookings();
+            await fetchBookings(false);
           } catch (e: any) {
-            Alert.alert("❌ Lỗi", e.message);
+            console.error(e);
+            Alert.alert("❌ Lỗi", "Có lỗi xảy ra: " + e.message);
+            fetchBookings(true);
           }
         },
       },
@@ -336,22 +385,25 @@ export default function ProviderBookingManagement() {
         <View style={styles.infoRow}>
           <Ionicons name="time" size={14} color="#666" />
           <Text style={styles.infoText}>
-            {new Date(item.bookingTime).toLocaleString("vi-VN", {
-              day: "2-digit",
-              month: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+            {item.bookingTime
+              ? new Date(item.bookingTime).toLocaleString("vi-VN", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : "N/A"}
           </Text>
         </View>
         <View style={styles.infoRow}>
           <Ionicons name="cash" size={14} color="#666" />
           <Text style={styles.infoText}>
-            {item.totalPrice.toLocaleString()}đ
+            {item.totalPrice ? item.totalPrice.toLocaleString() : "0"}đ
           </Text>
         </View>
       </View>
 
+      {/* Chỉ hiện nút hành động nếu trạng thái hợp lệ */}
       {["pending", "confirmed", "checked_in"].includes(item.status) && (
         <View style={styles.actionButtons}>
           <TouchableOpacity
@@ -370,7 +422,7 @@ export default function ProviderBookingManagement() {
                 <Ionicons name="log-in" size={16} color="#2E7D32" />
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => handleCancelBooking(item.id, item.roomNumber)}
+                onPress={() => handleCancelBooking(item.id, item.roomId)}
                 style={[styles.miniBtn, { backgroundColor: "#FFEBEE" }]}
               >
                 <Ionicons name="close" size={16} color="#C62828" />
@@ -380,7 +432,7 @@ export default function ProviderBookingManagement() {
 
           {item.status === "checked_in" && (
             <TouchableOpacity
-              onPress={() => handleCheckOut(item.id, item.roomNumber)}
+              onPress={() => handleCheckOut(item.id, item.roomId)}
               style={[styles.miniBtn, { backgroundColor: "#FFF3E0" }]}
             >
               <Ionicons name="checkmark-done" size={16} color="#EF6C00" />
@@ -418,7 +470,6 @@ export default function ProviderBookingManagement() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Quản lý đặt chỗ</Text>
         <View style={styles.statsRow}>
@@ -441,7 +492,6 @@ export default function ProviderBookingManagement() {
         </View>
       </View>
 
-      {/* Tabs */}
       <View style={styles.tabs}>
         <TouchableOpacity
           style={[styles.tab, activeTab === "active" && styles.activeTab]}
@@ -458,13 +508,7 @@ export default function ProviderBookingManagement() {
               activeTab === "active" && styles.activeTabText,
             ]}
           >
-            Đang hoạt động (
-            {
-              bookings.filter((b) =>
-                ["pending", "confirmed", "checked_in"].includes(b.status)
-              ).length
-            }
-            )
+            Đang hoạt động
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -487,13 +531,12 @@ export default function ProviderBookingManagement() {
         </TouchableOpacity>
       </View>
 
-      {/* Search & Filters */}
       <View style={styles.searchSection}>
         <View style={styles.searchBar}>
           <Ionicons name="search" size={20} color="#999" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Tìm theo tên, SĐT, địa điểm..."
+            placeholder="Tìm theo tên, SĐT..."
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
@@ -508,13 +551,11 @@ export default function ProviderBookingManagement() {
           <View style={styles.filterRow}>
             <StatusFilterChip status="all" label="Tất cả" />
             <StatusFilterChip status="pending" label="Chờ" />
-            <StatusFilterChip status="confirmed" label="Đã xác nhận" />
             <StatusFilterChip status="checked_in" label="Đang dùng" />
           </View>
         )}
       </View>
 
-      {/* List */}
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#2196F3" />
@@ -543,17 +584,11 @@ export default function ProviderBookingManagement() {
                   ? "Chưa có khách đặt"
                   : "Chưa có lịch sử"}
               </Text>
-              <Text style={styles.emptySubtext}>
-                {searchQuery
-                  ? "Thử tìm kiếm với từ khóa khác"
-                  : "Kéo xuống để làm mới"}
-              </Text>
             </View>
           }
         />
       )}
 
-      {/* Detail Modal */}
       <Modal
         visible={detailModalVisible}
         transparent
@@ -590,12 +625,6 @@ export default function ProviderBookingManagement() {
                   </TouchableOpacity>
                 </View>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Địa điểm:</Text>
-                  <Text style={styles.detailValue}>
-                    {selectedBooking.toiletName}
-                  </Text>
-                </View>
-                <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Phòng:</Text>
                   <Text style={styles.detailValue}>
                     {selectedBooking.roomNumber}
@@ -615,9 +644,11 @@ export default function ProviderBookingManagement() {
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Thời gian đặt:</Text>
                   <Text style={styles.detailValue}>
-                    {new Date(selectedBooking.bookingTime).toLocaleString(
-                      "vi-VN"
-                    )}
+                    {selectedBooking.bookingTime
+                      ? new Date(selectedBooking.bookingTime).toLocaleString(
+                          "vi-VN"
+                        )
+                      : "N/A"}
                   </Text>
                 </View>
 
@@ -632,32 +663,14 @@ export default function ProviderBookingManagement() {
                   </View>
                 )}
 
-                {selectedBooking.checkOutTime && (
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Check-out:</Text>
-                    <Text style={styles.detailValue}>
-                      {new Date(selectedBooking.checkOutTime).toLocaleString(
-                        "vi-VN"
-                      )}
-                    </Text>
-                  </View>
-                )}
-
                 {selectedBooking.notes && (
                   <View style={styles.notesBox}>
-                    <Text style={styles.notesLabel}>Ghi chú của khách:</Text>
+                    <Text style={styles.notesLabel}>Ghi chú:</Text>
                     <Text style={styles.notesText}>
                       {selectedBooking.notes}
                     </Text>
                   </View>
                 )}
-
-                <View style={styles.qrBox}>
-                  <Text style={styles.qrLabel}>Mã Booking:</Text>
-                  <Text style={styles.qrCode}>
-                    #{selectedBooking.id.slice(0, 8).toUpperCase()}
-                  </Text>
-                </View>
               </View>
             )}
           </View>
@@ -669,8 +682,6 @@ export default function ProviderBookingManagement() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F5F5" },
-
-  // Header
   header: {
     backgroundColor: "#2196F3",
     padding: 20,
@@ -695,8 +706,6 @@ const styles = StyleSheet.create({
   },
   statNumber: { fontSize: 24, fontWeight: "bold", color: "#FF5722" },
   statLabel: { fontSize: 11, color: "#666", marginTop: 4 },
-
-  // Tabs
   tabs: {
     flexDirection: "row",
     backgroundColor: "white",
@@ -714,8 +723,6 @@ const styles = StyleSheet.create({
   activeTab: { borderBottomWidth: 3, borderBottomColor: "#2196F3" },
   tabText: { fontWeight: "500", color: "#666", fontSize: 13 },
   activeTabText: { color: "#2196F3", fontWeight: "bold" },
-
-  // Search & Filter
   searchSection: {
     backgroundColor: "white",
     paddingHorizontal: 15,
@@ -762,8 +769,6 @@ const styles = StyleSheet.create({
     color: "white",
     fontWeight: "bold",
   },
-
-  // Loading
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -774,8 +779,6 @@ const styles = StyleSheet.create({
     marginTop: 10,
     color: "#666",
   },
-
-  // List
   listContainer: { padding: 15, paddingBottom: 30 },
   bookingCard: {
     backgroundColor: "white",
@@ -804,7 +807,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   infoText: { fontSize: 13, color: "#555" },
-
   actionButtons: {
     flexDirection: "row",
     justifyContent: "flex-end",
@@ -821,8 +823,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     elevation: 1,
   },
-
-  // Empty
   emptyContainer: {
     alignItems: "center",
     paddingTop: 80,
@@ -835,14 +835,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginTop: 15,
   },
-  emptySubtext: {
-    textAlign: "center",
-    color: "#999",
-    fontSize: 13,
-    marginTop: 8,
-  },
-
-  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -894,19 +886,4 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   notesText: { fontSize: 14, color: "#333" },
-  qrBox: {
-    backgroundColor: "#E3F2FD",
-    padding: 15,
-    borderRadius: 12,
-    marginTop: 15,
-    alignItems: "center",
-  },
-  qrLabel: { fontSize: 12, color: "#1976D2", marginBottom: 5 },
-  qrCode: {
-    fontSize: 18,
-    color: "#1565C0",
-    fontFamily: "monospace",
-    fontWeight: "bold",
-    letterSpacing: 2,
-  },
 });

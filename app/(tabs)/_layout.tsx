@@ -39,9 +39,6 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{ headerShown: false, tabBarActiveTintColor: "#2196F3" }}
     >
-      {/* =========================================================
-          NHÓM 2: USER (Giữ nguyên)
-         ========================================================= */}
       <Tabs.Screen
         name="index"
         options={{
@@ -78,8 +75,6 @@ export default function TabLayout() {
       {/* =========================================================
           NHÓM 3: PROVIDER (Đã rút gọn cho Phase 1)
          ========================================================= */}
-
-      {/* 1. Dashboard - Tương ứng với ProviderDashboard.tsx */}
       <Tabs.Screen
         name="dashboard"
         options={{
@@ -91,7 +86,6 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 2. Bookings - Tương ứng với ProviderBookingManagement.tsx */}
       <Tabs.Screen
         name="bookings"
         options={{
@@ -103,9 +97,6 @@ export default function TabLayout() {
         }}
       />
 
-      {/* --- CÁC TAB ẨN TẠM THỜI (Set href: null) --- */}
-
-      {/* Tab thêm mới (Profile) ẩn đi, nút thêm sẽ nằm trong Dashboard */}
       <Tabs.Screen
         name="profile"
         options={{
@@ -121,7 +112,7 @@ export default function TabLayout() {
         name="finance"
         options={{
           title: "Tài chính",
-          href: null, // <--- Đã ẩn (Phase 3 mới mở)
+          href: null, // <--- Đã ẩn
           tabBarIcon: ({ color }) => (
             <Ionicons name="cash" size={24} color={color} />
           ),
@@ -132,7 +123,7 @@ export default function TabLayout() {
         name="inventory"
         options={{
           title: "Vận hành",
-          href: null, // <--- Đã ẩn (Phase 2 mới mở)
+          href: null, 
           tabBarIcon: ({ color }) => (
             <Ionicons name="construct" size={24} color={color} />
           ),
@@ -143,7 +134,7 @@ export default function TabLayout() {
         name="incidents"
         options={{
           title: "Phản hồi",
-          href: null, // <--- Đã ẩn (Phase 2 mới mở)
+          href: null,
           tabBarIcon: ({ color }) => (
             <Ionicons name="chatbubbles" size={24} color={color} />
           ),

@@ -42,75 +42,61 @@ const AMENITY_LABELS: Record<string, string> = {
   locker: "Tủ đồ",
   parking: "Gửi xe",
   wifi: "Wifi Free",
-  wc: "Nhà vệ sinh",
-  sauna: "Xông hơi",
-  massage: "Massage",
-  laundry: "Giặt ủi",
-  shop: "Tạp hóa",
-  charge: "Sạc ĐT",
-  accessible: "Lối xe lăn",
+  music: "Nhạc thư giãn",
 };
 
-// 👉 DANH SÁCH TAG ĐÁNH GIÁ NHANH
-const REVIEW_TAGS = [
-  "Sạch sẽ 🧼",
-  "Nước mạnh 🚿",
-  "Riêng tư 🔒",
-  "Giá tốt 💸",
-  "Thơm tho 🌸",
-  "Tiện nghi ✨",
-  "Thân thiện 😊",
-  "An ninh 🛡️",
-];
-
-interface ToiletDetailModalProps {
-  visible: boolean;
-  onClose: () => void;
-  toilet: any;
-}
-
-export default function ToiletDetailModal({
-  visible,
-  onClose,
-  toilet,
-}: ToiletDetailModalProps) {
+export default function ToiletDetailModal({ visible, toilet, onClose }: any) {
   const [reviews, setReviews] = useState<any[]>([]);
-  const [reviewText, setReviewText] = useState("");
-  const [myRating, setMyRating] = useState(0);
+  const [showBooking, setShowBooking] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
 
-  // 👉 State lưu các tag đã chọn
+  // 👉 THÊM state user profile để điền form cho nhanh
+  const [userProfile, setUserProfile] = useState<any>(null);
+
+  // 👉 THÊM state xác định có phải Walk-in từ Scanner hay không
+  const [isWalkInMode, setIsWalkInMode] = useState(false);
+
+  // Review states
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
-  const [isWritingReview, setIsWritingReview] = useState(false);
+  const REVIEW_TAGS = [
+    "Sạch sẽ",
+    "Thoáng mát",
+    "Đầy đủ tiện nghi",
+    "Giá hợp lý",
+    "Nhân viên thân thiện",
+  ];
 
-  // State điều khiển Modal
-  const [bookingFormVisible, setBookingFormVisible] = useState(false);
-  const [scannerVisible, setScannerVisible] = useState(false);
-
+  // 1. Lấy thông tin user hiện tại (để điền sẵn vào form booking)
   useEffect(() => {
-    // Reset form khi đổi toilet
-    setMyRating(0);
-    setReviewText("");
-    setSelectedTags([]); // Reset tags
-    setIsWritingReview(false);
+    if (auth.currentUser) {
+      const userRef = doc(db, "users", auth.currentUser.uid);
+      const unsub = onSnapshot(userRef, (docSnap) => {
+        if (docSnap.exists()) {
+          setUserProfile(docSnap.data());
+        }
+      });
+      return () => unsub();
+    }
+  }, []);
+
+  // 2. Load Reviews Realtime
+  useEffect(() => {
+    if (toilet?.id) {
+      const q = query(
+        collection(db, "reviews"),
+        where("toiletId", "==", toilet.id),
+        orderBy("createdAt", "desc")
+      );
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        setReviews(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      });
+      return () => unsubscribe();
+    }
   }, [toilet]);
 
-  useEffect(() => {
-    if (!toilet) return;
-    const q = query(
-      collection(db, "reviews"),
-      where("toiletId", "==", toilet.id),
-      orderBy("createdAt", "desc")
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const list: any[] = [];
-      snapshot.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
-      setReviews(list);
-    });
-    return () => unsubscribe();
-  }, [toilet]);
-
-  // Xử lý chọn/bỏ chọn tag
   const toggleTag = (tag: string) => {
     if (selectedTags.includes(tag)) {
       setSelectedTags(selectedTags.filter((t) => t !== tag));
@@ -119,342 +105,250 @@ export default function ToiletDetailModal({
     }
   };
 
-  // BUTTON 1: ĐẶT TRƯỚC (Giữ chỗ)
-  const handleBookingRequest = () => {
-    const user = auth.currentUser;
-    if (!user) {
-      Alert.alert("Yêu cầu", "Bạn cần đăng nhập để đặt chỗ.");
-      return;
-    }
-    setBookingFormVisible(true);
-  };
-
-  // BUTTON 2: ĐẾN NƠI RỒI -> CHECK-IN NGAY (Walk-in)
-  const handleDirectCheckIn = () => {
-    const user = auth.currentUser;
-    if (!user) {
-      Alert.alert("Yêu cầu", "Bạn cần đăng nhập để check-in.");
-      return;
-    }
-    setScannerVisible(true);
-  };
-
   const submitReview = async () => {
-    if (myRating === 0) {
-      Alert.alert("Khoan!", "Vui lòng chọn số sao ⭐");
+    if (rating === 0) {
+      Alert.alert("Chưa đánh giá", "Vui lòng chọn số sao!");
       return;
     }
-    const user = auth.currentUser;
-    if (!user) return;
-
     try {
       await addDoc(collection(db, "reviews"), {
         toiletId: toilet.id,
-        userEmail: user.email,
-        userName: user.displayName || "Ẩn danh",
-        userPhoto: user.photoURL,
-        rating: myRating,
-        comment: reviewText,
-        tags: selectedTags, // 👉 Lưu tags vào Firestore
+        userId: auth.currentUser?.uid || "anonymous",
+        userName: userProfile?.fullName || "Khách ẩn danh",
+        rating,
+        comment,
+        tags: selectedTags,
         createdAt: new Date().toISOString(),
       });
-      await updateDoc(doc(db, "toilets", toilet.id), {
-        rating:
-          ((toilet.rating || 5) * (toilet.ratingCount || 1) + myRating) /
-          ((toilet.ratingCount || 1) + 1),
-        ratingCount: increment(1),
-      });
-      Alert.alert("Cảm ơn! 🌟", "Đánh giá của bạn giúp cộng đồng tốt hơn!");
 
-      // Reset form sau khi gửi
-      setMyRating(0);
-      setReviewText("");
+      // Update aggregate rating
+      const toiletRef = doc(db, "toilets", toilet.id);
+      await updateDoc(toiletRef, {
+        ratingCount: increment(1),
+        ratingTotal: increment(rating),
+      });
+
+      setRating(0);
+      setComment("");
       setSelectedTags([]);
-      setIsWritingReview(false);
-    } catch (e: any) {
-      Alert.alert("Lỗi", e.message);
+      Alert.alert("Cảm ơn!", "Đánh giá của bạn đã được ghi nhận.");
+    } catch (error) {
+      Alert.alert("Lỗi", "Không thể gửi đánh giá.");
     }
   };
 
-  if (!toilet) return null;
+  // 👉 Hàm xử lý khi quét QR thành công (cho Walk-in)
+  const handleScanSuccess = (scannedId?: string) => {
+    console.log("Scanner matched ID:", scannedId);
+    // Đóng scanner -> Mở form chọn phòng với mode Walk-in
+    setIsWalkInMode(true);
+    setShowScanner(false);
+
+    // Đợi 1 chút cho modal scanner đóng hẳn rồi mới mở form booking để tránh conflict UI
+    setTimeout(() => {
+      setShowBooking(true);
+    }, 500);
+  };
+
+  // Hàm mở form đặt trước (Pre-order)
+  const handleOpenBooking = () => {
+    setIsWalkInMode(false); // Đặt trước -> không phải walk-in
+    setShowBooking(true);
+  };
+
+  if (!visible) return null;
+
+  // 👉 SỬA LỖI: Fallback ảnh mạnh hơn, check cả mảng images và trường image đơn lẻ
+  const displayImage =
+    toilet?.images?.[0] || toilet?.image || "https://via.placeholder.com/400";
 
   return (
-    <Modal animationType="slide" visible={visible} onRequestClose={onClose}>
-      <SafeAreaView style={styles.container}>
-        <View style={styles.headerNav}>
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: "white" }}>
+        <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color="#333" />
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            {toilet.name}
+            {toilet?.name}
           </Text>
-          <View style={{ width: 24 }} />
+          <View style={{ width: 40 }} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <Image
-            source={{
-              uri:
-                toilet.image ||
-                "https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?w=600",
-            }}
-            style={styles.heroImage}
-          />
+        <ScrollView contentContainerStyle={styles.content}>
+          <Image source={{ uri: displayImage }} style={styles.image} />
 
-          <View style={styles.section}>
-            <Text style={styles.title}>{toilet.name}</Text>
-            <View style={styles.ratingRow}>
-              <Text style={styles.ratingBig}>
-                {toilet.rating ? toilet.rating.toFixed(1) : 5.0}
-              </Text>
-              <Ionicons name="star" size={16} color="#FBC02D" />
-              <Text style={styles.ratingCount}>
-                {" "}
-                ({toilet.ratingCount || 0} đánh giá)
-              </Text>
+          <View style={styles.detailsContainer}>
+            <View style={styles.titleRow}>
+              <Text style={styles.name}>{toilet?.name}</Text>
+              <View style={styles.ratingBadge}>
+                <Ionicons name="star" size={14} color="#FFD700" />
+                <Text style={styles.ratingText}>
+                  {toilet?.ratingTotal
+                    ? (toilet.ratingTotal / toilet.ratingCount).toFixed(1)
+                    : "New"}
+                </Text>
+              </View>
             </View>
-            <Text style={styles.subtitle}>
-              📍 {formatDistance(toilet.distance)} • {toilet.address}
+
+            <View style={styles.locationRow}>
+              <Ionicons name="location" size={16} color="#666" />
+              <Text style={styles.address}>{toilet?.address}</Text>
+            </View>
+            <Text style={styles.distance}>
+              Cách bạn: {formatDistance(toilet?.distance)}
             </Text>
-          </View>
 
-          {/* ACTION BUTTONS */}
-          <View style={styles.actionRow}>
-            <TouchableOpacity
-              style={[styles.mainBtn, styles.bookBtn]}
-              onPress={handleBookingRequest}
-            >
-              <Ionicons name="calendar-outline" size={20} color="white" />
-              <View style={{ marginLeft: 8 }}>
-                <Text style={styles.btnTitle}>Đặt trước</Text>
-                <Text style={styles.btnSub}>Giữ chỗ 15p</Text>
-              </View>
-            </TouchableOpacity>
+            <View style={styles.divider} />
 
-            <TouchableOpacity
-              style={[styles.mainBtn, styles.checkInBtn]}
-              onPress={handleDirectCheckIn}
-            >
-              <Ionicons name="qr-code-outline" size={20} color="white" />
-              <View style={{ marginLeft: 8 }}>
-                <Text style={styles.btnTitle}>Check-in ngay</Text>
-                <Text style={styles.btnSub}>Quét mã tại quầy</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.section}>
-            <View style={styles.infoRow}>
-              <Ionicons
-                name="pricetag-outline"
-                size={20}
-                color="#555"
-                style={{ marginRight: 10 }}
-              />
-              <Text style={styles.infoText}>
-                {toilet.price === 0
-                  ? "Miễn phí"
-                  : `${Number(toilet.price).toLocaleString()}đ / lượt`}
-              </Text>
+            <Text style={styles.sectionTitle}>Tiện ích</Text>
+            <View style={styles.amenitiesGrid}>
+              {toilet?.amenities?.map((am: string) => (
+                <View key={am} style={styles.amenityItem}>
+                  <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
+                  <Text style={styles.amenityText}>
+                    {AMENITY_LABELS[am] || am}
+                  </Text>
+                </View>
+              ))}
             </View>
-            <View style={styles.infoRow}>
-              <Ionicons
-                name="time-outline"
-                size={20}
-                color="#555"
-                style={{ marginRight: 10 }}
-              />
-              <Text style={styles.infoText}>Mở cửa: 05:30 - 23:00</Text>
-            </View>
-            {toilet.amenities && (
-              <View style={styles.chipContainer}>
-                {toilet.amenities.map((am: string) => (
-                  <View key={am} style={styles.chip}>
-                    <Text style={styles.chipText}>
-                      {AMENITY_LABELS[am] || am}
-                    </Text>
-                  </View>
+
+            <View style={styles.divider} />
+
+            <Text style={styles.sectionTitle}>Đánh giá & Bình luận</Text>
+
+            {/* Form đánh giá */}
+            <View style={styles.reviewForm}>
+              <Text style={styles.subTitle}>Viết đánh giá của bạn:</Text>
+              <View style={styles.rateReviewBtn}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <TouchableOpacity key={star} onPress={() => setRating(star)}>
+                    <Ionicons
+                      name={star <= rating ? "star" : "star-outline"}
+                      size={28}
+                      color="#FFD700"
+                      style={{ marginRight: 5 }}
+                    />
+                  </TouchableOpacity>
                 ))}
               </View>
-            )}
-          </View>
 
-          <View style={styles.divider} />
-
-          {/* PHẦN ĐÁNH GIÁ */}
-          <View style={styles.section}>
-            <Text style={styles.sectionHeader}>Đánh giá & Bình luận</Text>
-            {!isWritingReview ? (
-              <TouchableOpacity
-                style={styles.writeReviewBtn}
-                onPress={() => setIsWritingReview(true)}
-              >
-                <Ionicons name="create-outline" size={20} color="#0288D1" />
-                <Text style={{ color: "#0288D1", marginLeft: 5 }}>
-                  Viết đánh giá
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.reviewForm}>
-                <Text style={{ marginBottom: 10, fontWeight: "600" }}>
-                  Đánh giá trải nghiệm của bạn:
-                </Text>
-
-                {/* CHỌN SAO */}
-                <View
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: "center",
-                    marginBottom: 15,
-                  }}
-                >
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <TouchableOpacity
-                      key={star}
-                      onPress={() => setMyRating(star)}
-                      style={{ padding: 5 }}
+              <View style={styles.tagsContainer}>
+                {REVIEW_TAGS.map((tag) => (
+                  <TouchableOpacity
+                    key={tag}
+                    style={[
+                      styles.reviewTag,
+                      selectedTags.includes(tag) && styles.reviewTagSelected,
+                    ]}
+                    onPress={() => toggleTag(tag)}
+                  >
+                    <Text
+                      style={[
+                        styles.reviewTagText,
+                        selectedTags.includes(tag) &&
+                          styles.reviewTagTextSelected,
+                      ]}
                     >
-                      <Ionicons
-                        name={star <= myRating ? "star" : "star-outline"}
-                        size={32}
-                        color="#FBC02D"
-                      />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {/* 👉 CHỌN TAG (QUICK TAGS) */}
-                <Text style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
-                  Ưu điểm nổi bật (Chọn nhanh):
-                </Text>
-                <View style={styles.tagsContainer}>
-                  {REVIEW_TAGS.map((tag, index) => {
-                    const isSelected = selectedTags.includes(tag);
-                    return (
-                      <TouchableOpacity
-                        key={index}
-                        style={[
-                          styles.reviewTag,
-                          isSelected && styles.reviewTagSelected,
-                        ]}
-                        onPress={() => toggleTag(tag)}
-                      >
-                        <Text
-                          style={[
-                            styles.reviewTagText,
-                            isSelected && styles.reviewTagTextSelected,
-                          ]}
-                        >
-                          {tag}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                <TextInput
-                  style={styles.reviewInput}
-                  placeholder="Nhập bình luận chi tiết (nếu có)..."
-                  multiline
-                  value={reviewText}
-                  onChangeText={setReviewText}
-                />
-
-                <View
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: "flex-end",
-                    gap: 10,
-                    marginTop: 10,
-                  }}
-                >
-                  <TouchableOpacity
-                    onPress={() => {
-                      setIsWritingReview(false);
-                      setSelectedTags([]);
-                    }}
-                  >
-                    <Text style={{ color: "#666", padding: 10 }}>Hủy</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={submitReview}
-                    style={{
-                      backgroundColor: "#0288D1",
-                      paddingHorizontal: 20,
-                      paddingVertical: 10,
-                      borderRadius: 8,
-                    }}
-                  >
-                    <Text style={{ color: "white", fontWeight: "bold" }}>
-                      Gửi
+                      {tag}
                     </Text>
                   </TouchableOpacity>
-                </View>
+                ))}
               </View>
-            )}
 
-            {/* DANH SÁCH REVIEW */}
-            {reviews.map((rev) => (
-              <View key={rev.id} style={styles.reviewItem}>
-                <View style={{ flex: 1 }}>
+              <TextInput
+                style={styles.reviewInput}
+                placeholder="Chia sẻ trải nghiệm..."
+                multiline
+                value={comment}
+                onChangeText={setComment}
+              />
+              <TouchableOpacity
+                style={styles.submitReviewBtn}
+                onPress={submitReview}
+              >
+                <Text style={styles.submitReviewText}>Gửi Đánh Giá</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Danh sách Review */}
+            {reviews.map((rv) => (
+              <View key={rv.id} style={styles.reviewItem}>
+                <View style={styles.reviewHeader}>
+                  <Text style={styles.reviewUser}>{rv.userName}</Text>
+                  <View style={{ flexDirection: "row" }}>
+                    {Array.from({ length: rv.rating }).map((_, i) => (
+                      <Ionicons key={i} name="star" size={12} color="#FFD700" />
+                    ))}
+                  </View>
+                </View>
+                {/* Hiển thị Tags của review này */}
+                {rv.tags && rv.tags.length > 0 && (
                   <View
                     style={{
                       flexDirection: "row",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
+                      flexWrap: "wrap",
+                      gap: 5,
+                      marginBottom: 5,
                     }}
                   >
-                    <Text style={styles.reviewerName}>{rev.userName}</Text>
-                    <Text style={{ fontSize: 10, color: "#999" }}>
-                      {rev.createdAt
-                        ? new Date(rev.createdAt).toLocaleDateString()
-                        : ""}
-                    </Text>
-                  </View>
-
-                  <View style={{ flexDirection: "row", marginVertical: 4 }}>
-                    {[...Array(5)].map((_, i) => (
-                      <Ionicons
-                        key={i}
-                        name={i < rev.rating ? "star" : "star-outline"}
-                        size={12}
-                        color="#FBC02D"
-                      />
+                    {rv.tags.map((t: string, idx: number) => (
+                      <View
+                        key={idx}
+                        style={{
+                          backgroundColor: "#F5F5F5",
+                          paddingHorizontal: 6,
+                          paddingVertical: 2,
+                          borderRadius: 4,
+                        }}
+                      >
+                        <Text style={{ fontSize: 10, color: "#666" }}>{t}</Text>
+                      </View>
                     ))}
                   </View>
-
-                  {/* 👉 HIỂN THỊ TAG TRONG REVIEW */}
-                  {rev.tags && rev.tags.length > 0 && (
-                    <View style={styles.displayTagsRow}>
-                      {rev.tags.map((t: string, i: number) => (
-                        <View key={i} style={styles.miniTag}>
-                          <Text style={styles.miniTagText}>{t}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-
-                  {rev.comment ? (
-                    <Text style={styles.reviewText}>{rev.comment}</Text>
-                  ) : null}
-                </View>
+                )}
+                <Text style={styles.reviewContent}>{rv.comment}</Text>
+                <Text style={styles.reviewDate}>
+                  {new Date(rv.createdAt).toLocaleDateString()}
+                </Text>
               </View>
             ))}
           </View>
-          <View style={{ height: 40 }} />
         </ScrollView>
 
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={styles.scanButton}
+            onPress={() => setShowScanner(true)}
+          >
+            <Ionicons name="qr-code-outline" size={24} color="white" />
+            <Text style={styles.scanText}>Check-in Ngay</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.bookButton}
+            onPress={handleOpenBooking}
+          >
+            <Text style={styles.bookText}>Đặt Giữ Chỗ</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Modal Đặt Chỗ */}
         <BookingForm
-          visible={bookingFormVisible}
-          onClose={() => setBookingFormVisible(false)}
+          visible={showBooking}
+          onClose={() => setShowBooking(false)}
           toilet={toilet}
+          initialName={userProfile?.fullName}
+          initialPhone={userProfile?.phoneNumber}
+          isWalkIn={isWalkInMode} // 👉 Truyền mode vào
         />
+
+        {/* Modal Scan QR */}
         <QRScanner
-          visible={scannerVisible}
-          onClose={() => setScannerVisible(false)}
-          toiletData={toilet}
+          visible={showScanner}
+          onClose={() => setShowScanner(false)}
+          toiletData={toilet} // Truyền data để validate QR đúng tiệm
+          onSuccess={handleScanSuccess} // 👉 Xử lý khi quét xong
         />
       </SafeAreaView>
     </Modal>
@@ -462,58 +356,94 @@ export default function ToiletDetailModal({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "white" },
-  headerNav: {
+  header: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 15,
+    justifyContent: "space-between",
+    paddingHorizontal: 15,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
   },
   backButton: { padding: 5 },
-  headerTitle: { flex: 1, fontSize: 18, fontWeight: "bold", marginLeft: 10 },
-  scrollContent: { paddingBottom: 20 },
-  heroImage: { width: "100%", height: 200, resizeMode: "cover" },
-  section: { padding: 20 },
-  title: { fontSize: 24, fontWeight: "bold", color: "#202124" },
-  subtitle: { color: "#5F6368", marginTop: 4 },
-  ratingRow: { flexDirection: "row", alignItems: "center", marginTop: 5 },
-  ratingBig: { fontSize: 16, fontWeight: "bold", marginRight: 5 },
-  ratingCount: { color: "#666", fontSize: 12 },
-
-  actionRow: { flexDirection: "row", padding: 15, gap: 10 },
-  mainBtn: {
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
     flex: 1,
+    textAlign: "center",
+  },
+  content: { paddingBottom: 100 },
+  image: { width: "100%", height: 200, resizeMode: "cover" },
+  detailsContainer: { padding: 20 },
+  titleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  name: { fontSize: 22, fontWeight: "bold", flex: 1, marginRight: 10 },
+  ratingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF9C4",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  ratingText: { marginLeft: 4, fontWeight: "bold", fontSize: 12 },
+  locationRow: { flexDirection: "row", alignItems: "center", marginBottom: 5 },
+  address: { marginLeft: 5, color: "#666", fontSize: 14, flex: 1 },
+  distance: { fontSize: 12, color: "#999", marginTop: 5 },
+  divider: { height: 1, backgroundColor: "#eee", marginVertical: 20 },
+  sectionTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 15 },
+  amenitiesGrid: { flexDirection: "row", flexWrap: "wrap" },
+  amenityItem: {
+    width: "50%",
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  amenityText: { marginLeft: 8, color: "#444" },
+  footer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    padding: 15,
+    backgroundColor: "white",
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+    gap: 10,
+  },
+  scanButton: {
+    flex: 1,
+    backgroundColor: "#4CAF50",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    padding: 12,
-    borderRadius: 12,
+    paddingVertical: 12,
+    borderRadius: 8,
   },
-  bookBtn: { backgroundColor: "#2196F3" },
-  checkInBtn: { backgroundColor: "#4CAF50" },
-  btnTitle: { color: "white", fontWeight: "bold", fontSize: 14 },
-  btnSub: { color: "rgba(255,255,255,0.8)", fontSize: 10 },
+  scanText: { color: "white", fontWeight: "bold", marginLeft: 8 },
+  bookButton: {
+    flex: 1,
+    backgroundColor: "#2196F3",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  bookText: { color: "white", fontWeight: "bold" },
 
-  divider: { height: 8, backgroundColor: "#F0F2F5" },
-  infoRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
-  infoText: { fontSize: 15, color: "#333" },
-  chipContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 5,
+  // Styles Review
+  subTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 10,
+    color: "#555",
   },
-  chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 15,
-    backgroundColor: "#E3F2FD",
-  },
-  chipText: { fontSize: 12, color: "#1976D2" },
-
-  sectionHeader: { fontSize: 18, fontWeight: "bold", marginBottom: 15 },
-  writeReviewBtn: {
+  rateReviewBtn: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 10,
@@ -553,6 +483,14 @@ const styles = StyleSheet.create({
     height: 80,
     textAlignVertical: "top",
   },
+  submitReviewBtn: {
+    marginTop: 10,
+    backgroundColor: "#FF9800",
+    padding: 10,
+    borderRadius: 5,
+    alignItems: "center",
+  },
+  submitReviewText: { color: "white", fontWeight: "bold" },
 
   reviewItem: {
     marginTop: 15,
@@ -560,22 +498,12 @@ const styles = StyleSheet.create({
     borderBottomColor: "#eee",
     paddingBottom: 15,
   },
-  reviewerName: { fontWeight: "bold", fontSize: 14 },
-
-  // 👉 Styles cho Mini Tags trong Review List
-  displayTagsRow: {
+  reviewHeader: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginBottom: 4,
+    justifyContent: "space-between",
+    marginBottom: 5,
   },
-  miniTag: {
-    backgroundColor: "#F5F5F5",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  miniTagText: { fontSize: 10, color: "#666" },
-
-  reviewText: { marginTop: 4, color: "#444", lineHeight: 20 },
+  reviewUser: { fontWeight: "bold", fontSize: 14 },
+  reviewContent: { fontSize: 14, color: "#333", lineHeight: 20 },
+  reviewDate: { fontSize: 12, color: "#999", marginTop: 5 },
 });

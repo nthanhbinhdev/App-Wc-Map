@@ -1,6 +1,5 @@
-// components/ui/ProviderDashboard.tsx
 import { Ionicons } from "@expo/vector-icons";
-import * as Location from "expo-location"; // Import expo-location
+import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import {
   addDoc,
@@ -26,7 +25,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from "react-native-maps";
 import QRCode from "react-native-qrcode-svg";
@@ -56,7 +55,6 @@ interface Stats {
   totalRooms: number;
 }
 
-// Danh sách tiện ích mẫu - CẬP NHẬT THEO YÊU CẦU CỦA BÌNH
 const AMENITIES_LIST = [
   { id: "hot_water", label: "Nước nóng", icon: "thermometer" },
   { id: "sauna", label: "Xông hơi", icon: "cloud" },
@@ -70,9 +68,10 @@ const AMENITIES_LIST = [
 export default function ProviderDashboard() {
   const router = useRouter();
   const user = auth.currentUser;
-  
-  // Ref cho MapView để điều khiển camera mà không gây re-render liên tục
+
   const mapRef = useRef<MapView>(null);
+  // FIX: Dùng useRef để quản lý listener, tránh memory leak khi re-render
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -87,7 +86,6 @@ export default function ProviderDashboard() {
     totalRooms: 0,
   });
 
-  // Modal states
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const [roomManagementVisible, setRoomManagementVisible] = useState(false);
@@ -99,18 +97,16 @@ export default function ProviderDashboard() {
   const [editingToilet, setEditingToilet] = useState<Toilet | null>(null);
   const [selectedQRToilet, setSelectedQRToilet] = useState<Toilet | null>(null);
 
-  // Edit form states
   const [editName, setEditName] = useState("");
   const [editPrice, setEditPrice] = useState("");
   const [editAddress, setEditAddress] = useState("");
 
-  // Add form states
   const [newName, setNewName] = useState("");
   const [newAddress, setNewAddress] = useState("");
   const [newPrice, setNewPrice] = useState("");
-  const [newAmenities, setNewAmenities] = useState<string[]>([]); // State cho amenities
+  const [newAmenities, setNewAmenities] = useState<string[]>([]);
   const [newLocation, setNewLocation] = useState<Region>({
-    latitude: 10.762622, // Mặc định HCM
+    latitude: 10.762622,
     longitude: 106.660172,
     latitudeDelta: 0.005,
     longitudeDelta: 0.005,
@@ -118,20 +114,35 @@ export default function ProviderDashboard() {
 
   useEffect(() => {
     fetchDashboardData();
+
+    // FIX: Cleanup function quan trọng!
+    // Sẽ chạy khi component unmount hoặc user thay đổi, hủy listener cũ đi.
+    return () => {
+      if (unsubscribeRef.current) {
+        console.log("Cleaning up ProviderDashboard listener...");
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+    };
   }, [user]);
 
-  // Xin quyền truy cập vị trí khi mở app
   useEffect(() => {
     (async () => {
       let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        console.log('Permission to access location was denied');
+      if (status !== "granted") {
+        console.log("Permission to access location was denied");
       }
     })();
   }, []);
 
   const fetchDashboardData = async () => {
     if (!user) return;
+
+    // FIX: Hủy listener cũ trước khi tạo cái mới (tránh trùng lặp)
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+      unsubscribeRef.current = null;
+    }
 
     try {
       if (!refreshing) setLoading(true);
@@ -141,40 +152,59 @@ export default function ProviderDashboard() {
         where("createdBy", "==", user.email)
       );
 
-      const unsubscribe = onSnapshot(qToilets, async (snapshot) => {
-        const list: Toilet[] = [];
-        let approved = 0,
-          pending = 0;
+      // FIX: Gán listener vào ref
+      const unsub = onSnapshot(
+        qToilets,
+        async (snapshot) => {
+          const list: Toilet[] = [];
+          let approved = 0,
+            pending = 0;
 
-        snapshot.forEach((doc) => {
-          const data = doc.data() as any;
-          list.push({
-            id: doc.id,
-            name: data.name,
-            address: data.address,
-            price: data.price || 0,
-            status: data.status,
-            rating: data.rating || 5.0,
-            ratingCount: data.ratingCount || 0,
-            amenities: data.amenities || [],
-            location: data.location
-              ? { latitude: data.location.latitude, longitude: data.location.longitude }
-              : undefined,
+          snapshot.forEach((doc) => {
+            const data = doc.data() as any;
+            list.push({
+              id: doc.id,
+              name: data.name,
+              address: data.address,
+              price: data.price || 0,
+              status: data.status,
+              rating: data.rating || 5.0,
+              ratingCount: data.ratingCount || 0,
+              amenities: data.amenities || [],
+              location: data.location
+                ? {
+                    latitude: data.location.latitude,
+                    longitude: data.location.longitude,
+                  }
+                : undefined,
+            });
+
+            if (data.status === "approved") approved++;
+            else pending++;
           });
 
-          if (data.status === "approved") approved++;
-          else pending++;
-        });
+          setMyToilets(list);
+          // Hàm này nặng, nhưng cần thiết để cập nhật số liệu
+          await fetchAdditionalStats(list, approved, pending);
 
-        setMyToilets(list);
-        await fetchAdditionalStats(list, approved, pending);
-      });
+          setLoading(false);
+          setRefreshing(false);
+        },
+        (error) => {
+          console.error("Lỗi Realtime Listener:", error);
+          Alert.alert(
+            "Lỗi kết nối",
+            "Không thể cập nhật dữ liệu thời gian thực."
+          );
+          setLoading(false);
+          setRefreshing(false);
+        }
+      );
 
-      return () => unsubscribe();
+      unsubscribeRef.current = unsub;
     } catch (error) {
       console.error("Lỗi fetch dashboard:", error);
       Alert.alert("Lỗi", "Không thể tải dữ liệu");
-    } finally {
       setLoading(false);
       setRefreshing(false);
     }
@@ -269,13 +299,14 @@ export default function ProviderDashboard() {
   };
 
   // --- LOCATION HELPERS ---
-
-  // 1. Lấy vị trí hiện tại của user (FIX LAG: Dùng animateToRegion)
   const handleGetCurrentLocation = async () => {
     try {
       let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Quyền truy cập', 'Cần quyền truy cập vị trí để sử dụng tính năng này.');
+      if (status !== "granted") {
+        Alert.alert(
+          "Quyền truy cập",
+          "Cần quyền truy cập vị trí để sử dụng tính năng này."
+        );
         return;
       }
 
@@ -286,17 +317,14 @@ export default function ProviderDashboard() {
         latitudeDelta: 0.005,
         longitudeDelta: 0.005,
       };
-      
-      setNewLocation(newRegion);
-      // Di chuyển camera mượt mà đến vị trí mới
-      mapRef.current?.animateToRegion(newRegion, 1000); 
 
+      setNewLocation(newRegion);
+      mapRef.current?.animateToRegion(newRegion, 1000);
     } catch (error) {
       Alert.alert("Lỗi", "Không thể lấy vị trí hiện tại.");
     }
   };
 
-  // 2. Tìm vị trí từ địa chỉ nhập vào (FIX LAG: Dùng animateToRegion)
   const handleGeocodeAddress = async () => {
     if (!newAddress) {
       Alert.alert("Chưa nhập địa chỉ", "Vui lòng nhập địa chỉ để tìm kiếm.");
@@ -313,10 +341,12 @@ export default function ProviderDashboard() {
           longitudeDelta: 0.005,
         };
         setNewLocation(newRegion);
-        // Di chuyển camera mượt mà đến vị trí tìm thấy
         mapRef.current?.animateToRegion(newRegion, 1000);
       } else {
-        Alert.alert("Không tìm thấy", "Không thể tìm thấy vị trí cho địa chỉ này.");
+        Alert.alert(
+          "Không tìm thấy",
+          "Không thể tìm thấy vị trí cho địa chỉ này."
+        );
       }
     } catch (error) {
       Alert.alert("Lỗi", "Có lỗi xảy ra khi tìm kiếm địa chỉ.");
@@ -324,10 +354,12 @@ export default function ProviderDashboard() {
   };
 
   // --- CRUD Operations ---
-
   const handleAddNewFacility = async () => {
     if (!newName || !newAddress || !newPrice) {
-      Alert.alert("Thiếu thông tin", "Vui lòng nhập đầy đủ tên, địa chỉ và giá.");
+      Alert.alert(
+        "Thiếu thông tin",
+        "Vui lòng nhập đầy đủ tên, địa chỉ và giá."
+      );
       return;
     }
 
@@ -340,15 +372,14 @@ export default function ProviderDashboard() {
         status: "pending",
         rating: 5.0,
         ratingCount: 0,
-        amenities: newAmenities, // Lưu danh sách tiện ích
+        amenities: newAmenities,
         createdAt: new Date().toISOString(),
         location: new GeoPoint(newLocation.latitude, newLocation.longitude),
       });
 
       Alert.alert("✅ Thành công", "Đã thêm địa điểm mới!");
       setAddModalVisible(false);
-      
-      // Reset form
+
       setNewName("");
       setNewAddress("");
       setNewPrice("");
@@ -358,7 +389,6 @@ export default function ProviderDashboard() {
     }
   };
 
-  // Toggle tiện ích
   const toggleAmenity = (id: string) => {
     if (newAmenities.includes(id)) {
       setNewAmenities(newAmenities.filter((item) => item !== id));
@@ -434,12 +464,10 @@ export default function ProviderDashboard() {
     setRoomManagementVisible(true);
   };
 
-  // Navigation
   const navigateToBookings = () => {
     router.push("/(tabs)/bookings");
   };
 
-  // Render Item
   const renderToiletItem = ({ item }: { item: Toilet }) => (
     <View style={styles.card}>
       <TouchableOpacity
@@ -484,15 +512,24 @@ export default function ProviderDashboard() {
             <Text style={styles.reviewCount}>({item.ratingCount})</Text>
           </View>
         </View>
-        {/* Hiển thị tiện ích dạng mini */}
         {item.amenities && item.amenities.length > 0 && (
           <View style={styles.amenitiesRowMini}>
             {item.amenities.slice(0, 4).map((key) => {
               const am = AMENITIES_LIST.find((a) => a.id === key);
               if (!am) return null;
-              return <Ionicons key={key} name={am.icon as any} size={12} color="#999" style={{marginRight: 4}} />;
+              return (
+                <Ionicons
+                  key={key}
+                  name={am.icon as any}
+                  size={12}
+                  color="#999"
+                  style={{ marginRight: 4 }}
+                />
+              );
             })}
-            {item.amenities.length > 4 && <Text style={{fontSize: 10, color: '#999'}}>...</Text>}
+            {item.amenities.length > 4 && (
+              <Text style={{ fontSize: 10, color: "#999" }}>...</Text>
+            )}
           </View>
         )}
       </TouchableOpacity>
@@ -529,7 +566,7 @@ export default function ProviderDashboard() {
     </View>
   );
 
-  if (loading) {
+  if (loading && !refreshing) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2196F3" />
@@ -553,7 +590,6 @@ export default function ProviderDashboard() {
         }
         ListHeaderComponent={
           <>
-            {/* Header */}
             <View style={styles.header}>
               <Text style={styles.headerTitle}>Dashboard Kinh Doanh</Text>
               <TouchableOpacity
@@ -564,9 +600,7 @@ export default function ProviderDashboard() {
               </TouchableOpacity>
             </View>
 
-            {/* Stats Grid */}
             <View style={styles.statsSection}>
-              {/* ... (Giữ nguyên Stats Grid) ... */}
               <View style={styles.statsGrid}>
                 <View style={[styles.statCard, { backgroundColor: "#E3F2FD" }]}>
                   <Ionicons name="business" size={24} color="#2196F3" />
@@ -574,17 +608,13 @@ export default function ProviderDashboard() {
                   <Text style={styles.statLabel}>Địa điểm</Text>
                 </View>
 
-                <View
-                  style={[styles.statCard, { backgroundColor: "#E8F5E9" }]}
-                >
+                <View style={[styles.statCard, { backgroundColor: "#E8F5E9" }]}>
                   <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
                   <Text style={styles.statValue}>{stats.approved}</Text>
                   <Text style={styles.statLabel}>Đã duyệt</Text>
                 </View>
 
-                <View
-                  style={[styles.statCard, { backgroundColor: "#FFF3E0" }]}
-                >
+                <View style={[styles.statCard, { backgroundColor: "#FFF3E0" }]}>
                   <Ionicons name="time" size={24} color="#FF9800" />
                   <Text style={styles.statValue}>{stats.pending}</Text>
                   <Text style={styles.statLabel}>Chờ duyệt</Text>
@@ -592,9 +622,7 @@ export default function ProviderDashboard() {
               </View>
 
               <View style={styles.statsGrid}>
-                <View
-                  style={[styles.statCard, { backgroundColor: "#F3E5F5" }]}
-                >
+                <View style={[styles.statCard, { backgroundColor: "#F3E5F5" }]}>
                   <Ionicons name="cash" size={24} color="#9C27B0" />
                   <Text style={styles.statValue}>
                     {(stats.totalRevenue / 1000).toFixed(0)}K
@@ -602,24 +630,19 @@ export default function ProviderDashboard() {
                   <Text style={styles.statLabel}>Doanh thu</Text>
                 </View>
 
-                <View
-                  style={[styles.statCard, { backgroundColor: "#E0F2F1" }]}
-                >
+                <View style={[styles.statCard, { backgroundColor: "#E0F2F1" }]}>
                   <Ionicons name="calendar" size={24} color="#00796B" />
                   <Text style={styles.statValue}>{stats.todayBookings}</Text>
                   <Text style={styles.statLabel}>Hôm nay</Text>
                 </View>
 
-                <View
-                  style={[styles.statCard, { backgroundColor: "#FFEBEE" }]}
-                >
+                <View style={[styles.statCard, { backgroundColor: "#FFEBEE" }]}>
                   <Ionicons name="people" size={24} color="#C62828" />
                   <Text style={styles.statValue}>{stats.activeBookings}</Text>
                   <Text style={styles.statLabel}>Đang hoạt động</Text>
                 </View>
               </View>
 
-              {/* Quick Actions */}
               <View style={styles.quickActions}>
                 <TouchableOpacity
                   style={styles.actionCard}
@@ -692,7 +715,6 @@ export default function ProviderDashboard() {
         contentContainerStyle={styles.listContent}
       />
 
-      {/* --- ADD NEW FACILITY MODAL (UPDATED) --- */}
       <Modal visible={addModalVisible} animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxHeight: "95%" }]}>
@@ -713,15 +735,15 @@ export default function ProviderDashboard() {
               />
 
               <Text style={styles.inputLabel}>Địa chỉ hiển thị</Text>
-              <View style={{flexDirection: 'row', gap: 10}}>
+              <View style={{ flexDirection: "row", gap: 10 }}>
                 <TextInput
-                  style={[styles.input, {flex: 1}]}
+                  style={[styles.input, { flex: 1 }]}
                   value={newAddress}
                   onChangeText={setNewAddress}
                   placeholder="Số 123, Đường ABC..."
                 />
-                <TouchableOpacity 
-                  style={styles.searchLocationBtn} 
+                <TouchableOpacity
+                  style={styles.searchLocationBtn}
                   onPress={handleGeocodeAddress}
                 >
                   <Ionicons name="search" size={24} color="white" />
@@ -737,7 +759,6 @@ export default function ProviderDashboard() {
                 keyboardType="numeric"
               />
 
-              {/* Tiện ích (Amenities) Section */}
               <Text style={styles.inputLabel}>Tiện ích & Dịch vụ</Text>
               <View style={styles.amenitiesContainer}>
                 {AMENITIES_LIST.map((item) => {
@@ -769,13 +790,15 @@ export default function ProviderDashboard() {
                 })}
               </View>
 
-              <Text style={styles.inputLabel}>Vị trí chính xác (Kéo bản đồ)</Text>
+              <Text style={styles.inputLabel}>
+                Vị trí chính xác (Kéo bản đồ)
+              </Text>
               <View style={styles.mapContainer}>
                 <MapView
-                  ref={mapRef} // Gắn ref để điều khiển camera
+                  ref={mapRef}
                   provider={PROVIDER_GOOGLE}
                   style={styles.map}
-                  initialRegion={newLocation} // Dùng initialRegion thay vì region để tránh giật
+                  initialRegion={newLocation}
                   onRegionChangeComplete={(region) => setNewLocation(region)}
                 >
                   <Marker
@@ -786,22 +809,21 @@ export default function ProviderDashboard() {
                     title="Vị trí địa điểm"
                   />
                 </MapView>
-                
-                {/* Crosshair */}
+
                 <View style={styles.mapCrosshair}>
                   <Ionicons name="add" size={30} color="#2196F3" />
                 </View>
 
-                {/* Nút định vị tôi */}
-                <TouchableOpacity 
-                  style={styles.locateMeBtn} 
+                <TouchableOpacity
+                  style={styles.locateMeBtn}
                   onPress={handleGetCurrentLocation}
                 >
                   <Ionicons name="locate" size={24} color="#2196F3" />
                 </TouchableOpacity>
               </View>
               <Text style={styles.coordsText}>
-                Lat: {newLocation.latitude.toFixed(6)}, Lng: {newLocation.longitude.toFixed(6)}
+                Lat: {newLocation.latitude.toFixed(6)}, Lng:{" "}
+                {newLocation.longitude.toFixed(6)}
               </Text>
 
               <View style={styles.modalButtons}>
@@ -823,7 +845,6 @@ export default function ProviderDashboard() {
         </View>
       </Modal>
 
-      {/* Edit Modal */}
       <Modal visible={editModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -875,7 +896,6 @@ export default function ProviderDashboard() {
         </View>
       </Modal>
 
-      {/* QR Modal */}
       <Modal visible={qrModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.qrModalContent}>
@@ -918,7 +938,6 @@ export default function ProviderDashboard() {
         </View>
       </Modal>
 
-      {/* Room Management Modal */}
       <Modal
         visible={roomManagementVisible}
         animationType="slide"
@@ -948,8 +967,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#F5F7FA",
   },
   loadingText: { marginTop: 10, color: "#666", fontSize: 14 },
-
-  // Header
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -966,8 +983,6 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     padding: 8,
   },
-
-  // Stats
   statsSection: { padding: 20 },
   statsGrid: {
     flexDirection: "row",
@@ -988,8 +1003,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   statLabel: { fontSize: 11, color: "#666", marginTop: 4 },
-
-  // Quick Actions
   quickActions: {
     flexDirection: "row",
     gap: 10,
@@ -1027,19 +1040,13 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     textAlign: "center",
   },
-
-  // Section
   sectionHeader: {
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 15,
   },
   sectionTitle: { fontSize: 18, fontWeight: "bold", color: "#333" },
-
-  // List
   listContent: { paddingBottom: 20 },
-
-  // Card
   card: {
     flexDirection: "row",
     backgroundColor: "white",
@@ -1097,12 +1104,10 @@ const styles = StyleSheet.create({
   },
   reviewCount: { fontSize: 12, color: "#999" },
   amenitiesRowMini: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginTop: 8,
-    alignItems: 'center',
+    alignItems: "center",
   },
-
-  // Action Column
   actionColumn: {
     justifyContent: "space-around",
     paddingLeft: 10,
@@ -1117,8 +1122,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
-  // Empty State
   emptyState: {
     alignItems: "center",
     paddingTop: 60,
@@ -1151,8 +1154,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
   },
-
-  // Modals
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -1191,41 +1192,41 @@ const styles = StyleSheet.create({
     backgroundColor: "#F9F9F9",
   },
   searchLocationBtn: {
-    backgroundColor: '#2196F3',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#2196F3",
+    justifyContent: "center",
+    alignItems: "center",
     borderRadius: 12,
     paddingHorizontal: 15,
   },
   amenitiesContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
     marginTop: 5,
   },
   amenityChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: "#F5F5F5",
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: "#E0E0E0",
     gap: 6,
   },
   amenityChipActive: {
-    backgroundColor: '#2196F3',
-    borderColor: '#2196F3',
+    backgroundColor: "#2196F3",
+    borderColor: "#2196F3",
   },
   amenityText: {
     fontSize: 12,
-    color: '#666',
-    fontWeight: '500',
+    color: "#666",
+    fontWeight: "500",
   },
   amenityTextActive: {
-    color: 'white',
-    fontWeight: 'bold',
+    color: "white",
+    fontWeight: "bold",
   },
   modalButtons: {
     flexDirection: "row",
@@ -1249,8 +1250,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   confirmBtnText: { color: "white", fontWeight: "bold" },
-
-  // Map Styles
   mapContainer: {
     height: 250,
     borderRadius: 16,
@@ -1275,14 +1274,14 @@ const styles = StyleSheet.create({
     pointerEvents: "none",
   },
   locateMeBtn: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 10,
     right: 10,
-    backgroundColor: 'white',
+    backgroundColor: "white",
     padding: 10,
     borderRadius: 25,
     elevation: 3,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOpacity: 0.1,
     shadowRadius: 5,
   },
@@ -1292,8 +1291,6 @@ const styles = StyleSheet.create({
     color: "#999",
     fontFamily: "monospace",
   },
-
-  // QR Modal
   qrModalContent: {
     backgroundColor: "white",
     borderRadius: 20,
@@ -1338,59 +1335,5 @@ const styles = StyleSheet.create({
   printBtnText: {
     color: "white",
     fontWeight: "bold",
-  },
-
-  // Rooms Modal
-  roomsModalContent: {
-    backgroundColor: "white",
-    borderRadius: 20,
-    padding: 20,
-    maxHeight: "70%",
-  },
-  roomsList: {
-    marginTop: 10,
-  },
-  noRoomsText: {
-    textAlign: "center",
-    color: "#999",
-    padding: 40,
-  },
-  roomCard: {
-    backgroundColor: "#F9F9F9",
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 10,
-    borderLeftWidth: 4,
-    borderLeftColor: "#2196F3",
-  },
-  roomHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  roomNumber: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#333",
-  },
-  roomStatusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  roomStatusText: {
-    fontSize: 10,
-    fontWeight: "bold",
-  },
-  roomType: {
-    fontSize: 13,
-    color: "#666",
-    marginBottom: 4,
-  },
-  roomPrice: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#2196F3",
   },
 });

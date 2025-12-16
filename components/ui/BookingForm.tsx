@@ -34,164 +34,160 @@ interface BookingFormProps {
   visible: boolean;
   onClose: () => void;
   toilet: any;
+  initialName?: string;
+  initialPhone?: string;
+  isWalkIn?: boolean;
 }
 
 export default function BookingForm({
   visible,
   onClose,
   toilet,
+  initialName,
+  initialPhone,
+  isWalkIn = false,
 }: BookingFormProps) {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
 
   // Form state
-  const [userName, setUserName] = useState("");
-  const [userPhone, setUserPhone] = useState("");
-  const [estimatedMinutes, setEstimatedMinutes] = useState("15");
-  const [notes, setNotes] = useState("");
+  const [guestName, setGuestName] = useState(initialName || "");
+  const [guestPhone, setGuestPhone] = useState(initialPhone || "");
+  const [arrivalTime, setArrivalTime] = useState(isWalkIn ? 0 : 15);
+  const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const user = auth.currentUser;
-
+  // 👉 QUAN TRỌNG: Đồng bộ lại state khi props thay đổi (fix lỗi không tự điền tên)
   useEffect(() => {
-    if (visible && toilet) {
-      fetchRooms();
-      setUserName(user?.displayName || "");
+    if (visible) {
+      if (initialName) setGuestName(initialName);
+      if (initialPhone) setGuestPhone(initialPhone);
+      setArrivalTime(isWalkIn ? 0 : 15);
     }
+  }, [visible, initialName, initialPhone, isWalkIn]);
+
+  // Load danh sách phòng trống
+  useEffect(() => {
+    if (!visible || !toilet?.id) return;
+
+    const fetchRooms = async () => {
+      setLoading(true);
+      try {
+        // 👉 SỬA LỖI: Đổi 'storeId' thành 'toiletId' để khớp với database
+        const q = query(
+          collection(db, "rooms"),
+          where("toiletId", "==", toilet.id),
+          where("status", "==", "available")
+        );
+        const snapshot = await getDocs(q);
+        const roomList = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        })) as Room[];
+        setRooms(roomList);
+      } catch (error) {
+        console.error("Lỗi tải phòng:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRooms();
   }, [visible, toilet]);
 
-  const fetchRooms = async () => {
-    setLoading(true);
-    try {
-      // Tìm phòng available của toilet này
-      const q = query(
-        collection(db, "rooms"),
-        where("toiletId", "==", toilet.id),
-        where("status", "==", "available")
+  const handleBooking = async () => {
+    if (!selectedRoom) {
+      Alert.alert(
+        "Chưa chọn phòng",
+        "Vui lòng chọn loại phòng bạn muốn sử dụng."
       );
-      const snapshot = await getDocs(q);
-      const roomList: Room[] = [];
-      snapshot.forEach((doc) => {
-        roomList.push({ id: doc.id, ...doc.data() } as Room);
-      });
-      setRooms(roomList);
-    } catch (error) {
-      console.error(error);
-      // Không alert lỗi để tránh làm phiền user nếu chỉ là không có phòng
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSubmitBooking = async () => {
-    // Validate cơ bản
-    if (!userName.trim() || !userPhone.trim()) {
-      Alert.alert("Lỗi", "Vui lòng nhập đầy đủ tên và số điện thoại");
       return;
     }
 
-    // Nếu có danh sách phòng mà chưa chọn -> Bắt buộc chọn
-    if (rooms.length > 0 && !selectedRoom) {
-      Alert.alert("Lỗi", "Vui lòng chọn một phòng trống");
+    if (!guestName.trim() || !guestPhone.trim()) {
+      Alert.alert("Thiếu thông tin", "Vui lòng nhập tên và số điện thoại.");
       return;
     }
 
     setSubmitting(true);
-
     try {
       const now = new Date();
-      const eta = new Date(now.getTime() + parseInt(estimatedMinutes) * 60000);
-      const expiry = new Date(now.getTime() + 20 * 60000); // Giữ chỗ 20p
+      const expectedTime = new Date(now.getTime() + arrivalTime * 60000);
 
-      // Nếu không chọn phòng (hoặc không có phòng), dùng giá mặc định của toilet
-      const finalPrice = selectedRoom ? selectedRoom.price : toilet.price || 0;
-      const finalRoomId = selectedRoom ? selectedRoom.id : "general"; // 'general' cho đặt chung
-      const finalRoomNumber = selectedRoom
-        ? selectedRoom.roomNumber
-        : "Tự chọn tại quầy";
+      const bookingStatus = isWalkIn ? "checked_in" : "pending";
+      const checkInTimeVal = isWalkIn ? now.toISOString() : null;
 
       const bookingData = {
-        userId: user?.uid,
-        userEmail: user?.email,
-        userName: userName.trim(),
-        userPhone: userPhone.trim(),
-
+        userId: auth.currentUser?.uid || "guest",
+        guestName,
+        guestPhone,
         toiletId: toilet.id,
         toiletName: toilet.name,
         toiletAddress: toilet.address,
-
-        roomId: finalRoomId,
-        roomNumber: finalRoomNumber,
-
-        status: "pending", // -> Chờ check-in
-        paymentStatus: "pending",
-        totalPrice: finalPrice,
-
-        notes: notes.trim(),
-        bookingTime: now.toISOString(),
-        estimatedArrival: eta.toISOString(),
-        expiryTime: expiry.toISOString(),
-        type: "pre_order",
+        roomId: selectedRoom.id,
+        roomNumber: selectedRoom.roomNumber,
+        roomType: selectedRoom.type,
+        price: selectedRoom.price,
+        status: bookingStatus,
+        createdAt: now.toISOString(),
+        expectedArrival: expectedTime.toISOString(),
+        checkInTime: checkInTimeVal,
+        note,
+        paymentStatus: "unpaid",
       };
 
-      const bookingRef = await addDoc(collection(db, "bookings"), bookingData);
+      await addDoc(collection(db, "bookings"), bookingData);
 
-      // Nếu có chọn phòng cụ thể -> Cập nhật trạng thái phòng
-      if (selectedRoom) {
-        await updateDoc(doc(db, "rooms", selectedRoom.id), {
-          status: "booked",
-          currentBookingId: bookingRef.id,
-          lastUpdated: now.toISOString(),
-        });
-      }
+      await updateDoc(doc(db, "rooms", selectedRoom.id), {
+        status: "occupied",
+        lastUpdated: now.toISOString(),
+      });
 
-      Alert.alert(
-        "🎉 Đặt chỗ thành công!",
-        `Mã đơn: #${bookingRef.id
-          .slice(0, 5)
-          .toUpperCase()}\nVui lòng đến cửa hàng và quét mã QR để Check-in.`,
-        [{ text: "OK", onPress: onClose }]
-      );
+      const successTitle = isWalkIn
+        ? "Check-in Thành Công!"
+        : "Đặt Chỗ Thành Công!";
+      const successMsg = isWalkIn
+        ? `Bạn đã check-in vào phòng ${selectedRoom.roomNumber}.`
+        : `Bạn đã đặt phòng ${selectedRoom.roomNumber}. Vui lòng đến trong vòng ${arrivalTime} phút nữa.`;
+
+      Alert.alert("✅ " + successTitle, successMsg, [
+        { text: "OK", onPress: onClose },
+      ]);
     } catch (error: any) {
-      console.error(error);
-      Alert.alert("Lỗi", error.message);
+      Alert.alert("Lỗi", "Không thể tạo đơn: " + error.message);
     } finally {
       setSubmitting(false);
     }
   };
 
-  const getRoomTypeLabel = (type: string) => {
-    const labels: Record<string, string> = {
-      single: "🚿 Đơn",
-      couple: "💑 Đôi",
-      family: "👨‍👩‍👧 Gia đình",
-    };
-    return labels[type] || type;
-  };
-
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.backBtn}>
-            <Ionicons name="close" size={28} color="#333" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Đặt trước tại {toilet?.name}</Text>
-          <View style={{ width: 28 }} />
-        </View>
-
-        <ScrollView style={styles.content}>
-          {/* PHẦN 1: CHỌN PHÒNG (Chỉ hiện nếu có phòng available) */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              <Ionicons name="bed" size={18} />{" "}
-              {rooms.length > 0 ? "Chọn phòng" : "Thông tin dịch vụ"}
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={styles.overlay}>
+        <View style={styles.container}>
+          <View style={styles.header}>
+            <Text style={styles.title}>
+              {isWalkIn ? "Check-in Trực Tiếp" : "Đặt Giữ Chỗ"}
             </Text>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={24} color="#333" />
+            </TouchableOpacity>
+          </View>
 
+          <ScrollView style={styles.content}>
+            <View style={styles.infoBox}>
+              <Text style={styles.toiletName}>{toilet?.name}</Text>
+              <Text style={styles.toiletAddress}>{toilet?.address}</Text>
+            </View>
+
+            <Text style={styles.sectionTitle}>1. Chọn Phòng Trống</Text>
             {loading ? (
-              <ActivityIndicator size="small" color="#2196F3" />
-            ) : rooms.length > 0 ? (
+              <ActivityIndicator style={{ marginTop: 20 }} color="#2196F3" />
+            ) : rooms.length === 0 ? (
+              <Text style={styles.emptyText}>
+                Hiện không còn phòng trống :(
+              </Text>
+            ) : (
               <View style={styles.roomGrid}>
                 {rooms.map((room) => (
                   <TouchableOpacity
@@ -203,109 +199,119 @@ export default function BookingForm({
                     onPress={() => setSelectedRoom(room)}
                   >
                     <View style={styles.roomHeader}>
-                      <Text style={styles.roomNumber}>{room.roomNumber}</Text>
-                      <View style={styles.roomTypeBadge}>
-                        <Text style={styles.roomTypeText}>
-                          {getRoomTypeLabel(room.type)}
-                        </Text>
-                      </View>
+                      <Ionicons
+                        name={
+                          selectedRoom?.id === room.id
+                            ? "checkmark-circle"
+                            : "radio-button-off"
+                        }
+                        size={20}
+                        color={
+                          selectedRoom?.id === room.id ? "#2196F3" : "#999"
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.roomNum,
+                          selectedRoom?.id === room.id && styles.textSelected,
+                        ]}
+                      >
+                        P.{room.roomNumber}
+                      </Text>
                     </View>
+                    <Text style={styles.roomType}>{room.type}</Text>
                     <Text style={styles.roomPrice}>
                       {room.price.toLocaleString()}đ
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
-            ) : (
-              <View style={styles.noRoomBox}>
-                <Ionicons
-                  name="information-circle-outline"
-                  size={24}
-                  color="#666"
-                />
-                <Text style={styles.noRoomText}>
-                  Địa điểm này chưa cập nhật danh sách phòng cụ thể. Bạn vui
-                  lòng đặt vé chung và chọn phòng khi đến nơi.
-                </Text>
-                <Text style={styles.priceHighlight}>
-                  Giá vé: {Number(toilet?.price).toLocaleString()}đ
-                </Text>
-              </View>
             )}
-          </View>
 
-          {/* PHẦN 2: THÔNG TIN */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Thông tin liên hệ</Text>
+            <Text style={styles.sectionTitle}>2. Thông Tin Của Bạn</Text>
             <TextInput
               style={styles.input}
-              value={userName}
-              onChangeText={setUserName}
-              placeholder="Họ tên"
+              placeholder="Tên của bạn (VD: Bình)"
+              value={guestName}
+              onChangeText={setGuestName}
             />
             <TextInput
               style={styles.input}
-              value={userPhone}
-              onChangeText={setUserPhone}
               placeholder="Số điện thoại"
               keyboardType="phone-pad"
+              value={guestPhone}
+              onChangeText={setGuestPhone}
             />
-          </View>
 
-          {/* PHẦN 3: THỜI GIAN */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Bao lâu nữa bạn tới?</Text>
-            <View style={styles.timeSelector}>
-              {["10", "15", "20", "30"].map((mins) => (
-                <TouchableOpacity
-                  key={mins}
-                  style={[
-                    styles.timeChip,
-                    estimatedMinutes === mins && styles.timeChipSelected,
-                  ]}
-                  onPress={() => setEstimatedMinutes(mins)}
-                >
-                  <Text
-                    style={[
-                      styles.timeChipText,
-                      estimatedMinutes === mins && styles.timeChipTextSelected,
-                    ]}
-                  >
-                    {mins} phút
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {!isWalkIn && (
+              <>
+                <Text style={styles.sectionTitle}>3. Bao lâu nữa bạn tới?</Text>
+                <View style={styles.timeSelector}>
+                  {[5, 10, 15, 30].map((m) => (
+                    <TouchableOpacity
+                      key={m}
+                      style={[
+                        styles.timeChip,
+                        arrivalTime === m && styles.timeChipSelected,
+                      ]}
+                      onPress={() => setArrivalTime(m)}
+                    >
+                      <Text
+                        style={[
+                          styles.timeChipText,
+                          arrivalTime === m && styles.timeChipTextSelected,
+                        ]}
+                      >
+                        {m} phút
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
+
             <TextInput
               style={styles.inputArea}
-              placeholder="Ghi chú thêm..."
+              placeholder="Ghi chú thêm (nếu có)..."
               multiline
-              value={notes}
-              onChangeText={setNotes}
+              value={note}
+              onChangeText={setNote}
             />
 
             <View style={styles.warningBox}>
-              <Ionicons name="wallet-outline" size={20} color="#FF9800" />
+              <Ionicons name="information-circle" size={20} color="#F57C00" />
               <Text style={styles.warningText}>
-                Chưa cần thanh toán ngay. Vui lòng thanh toán tại quầy khi sử
-                dụng xong.
+                {isWalkIn
+                  ? "Vui lòng giữ vệ sinh chung khi sử dụng."
+                  : "Vui lòng đến đúng giờ. Đơn sẽ tự hủy sau 10 phút trễ."}
               </Text>
             </View>
-          </View>
-        </ScrollView>
+          </ScrollView>
 
-        <View style={styles.footer}>
-          <TouchableOpacity
-            style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
-            onPress={handleSubmitBooking}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Text style={styles.submitBtnText}>XÁC NHẬN ĐẶT CHỖ</Text>
-            )}
-          </TouchableOpacity>
+          <View style={styles.footer}>
+            <View>
+              <Text style={styles.totalLabel}>Tổng tạm tính:</Text>
+              <Text style={styles.totalPrice}>
+                {selectedRoom ? selectedRoom.price.toLocaleString() : "0"}đ
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.submitBtn,
+                (!selectedRoom || submitting) && styles.disabledBtn,
+              ]}
+              disabled={!selectedRoom || submitting}
+              onPress={handleBooking}
+            >
+              {submitting ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <Text style={styles.submitBtnText}>
+                  {isWalkIn ? "Check-in & Vào" : "Xác Nhận Đặt"}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>
@@ -313,76 +319,68 @@ export default function BookingForm({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F5F5F5" },
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  container: {
+    backgroundColor: "#F5F7FA",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    height: "90%",
+  },
   header: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
-    padding: 15,
-    paddingTop: 50,
+    alignItems: "center",
+    padding: 20,
     backgroundColor: "white",
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
-  backBtn: { padding: 5 },
-  headerTitle: { fontSize: 16, fontWeight: "bold", color: "#333" },
-  content: { flex: 1 },
-  section: { backgroundColor: "white", padding: 20, marginTop: 10 },
+  title: { fontSize: 18, fontWeight: "bold", color: "#333" },
+  content: { padding: 20 },
+
+  infoBox: { marginBottom: 20 },
+  toiletName: { fontSize: 16, fontWeight: "bold", color: "#333" },
+  toiletAddress: { fontSize: 14, color: "#666", marginTop: 4 },
+
   sectionTitle: {
     fontSize: 16,
     fontWeight: "bold",
     color: "#333",
-    marginBottom: 15,
+    marginTop: 15,
+    marginBottom: 10,
   },
+  emptyText: { textAlign: "center", color: "#999", marginVertical: 20 },
 
-  // Room Grid Styles
   roomGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   roomCard: {
     width: "48%",
-    backgroundColor: "#F5F5F5",
+    backgroundColor: "white",
+    padding: 12,
     borderRadius: 12,
-    padding: 15,
     borderWidth: 2,
     borderColor: "transparent",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
-  roomCardSelected: { borderColor: "#4CAF50", backgroundColor: "#E8F5E9" },
+  roomCardSelected: { borderColor: "#2196F3", backgroundColor: "#E3F2FD" },
   roomHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
     marginBottom: 8,
   },
-  roomNumber: { fontSize: 20, fontWeight: "bold", color: "#333" },
-  roomTypeBadge: {
-    backgroundColor: "#E3F2FD",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  roomTypeText: { fontSize: 11, color: "#1976D2", fontWeight: "bold" },
-  roomPrice: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#2196F3",
-    marginTop: 5,
-  },
-
-  // No Room Box
-  noRoomBox: {
-    alignItems: "center",
-    padding: 20,
-    backgroundColor: "#F9F9F9",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#EEE",
-  },
-  noRoomText: {
-    textAlign: "center",
-    color: "#666",
-    marginVertical: 10,
-    lineHeight: 20,
-  },
-  priceHighlight: { fontSize: 18, fontWeight: "bold", color: "#2196F3" },
+  roomNum: { fontWeight: "bold", color: "#333" },
+  textSelected: { color: "#1976D2" },
+  roomType: { fontSize: 12, color: "#666", marginBottom: 4 },
+  roomPrice: { fontSize: 14, fontWeight: "bold", color: "#2196F3" },
 
   input: {
     borderWidth: 1,
@@ -425,22 +423,28 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     marginTop: 20,
-    gap: 10,
+    marginBottom: 40,
   },
-  warningText: { flex: 1, fontSize: 13, color: "#E65100" },
+  warningText: { marginLeft: 10, color: "#F57C00", flex: 1, fontSize: 13 },
 
   footer: {
-    padding: 20,
     backgroundColor: "white",
+    padding: 20,
     borderTopWidth: 1,
     borderTopColor: "#eee",
-  },
-  submitBtn: {
-    backgroundColor: "#4CAF50",
-    padding: 15,
-    borderRadius: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
+    paddingBottom: 30,
   },
-  submitBtnDisabled: { backgroundColor: "#B0BEC5" },
-  submitBtnText: { color: "white", fontSize: 16, fontWeight: "bold" },
+  totalLabel: { fontSize: 12, color: "#666" },
+  totalPrice: { fontSize: 20, fontWeight: "bold", color: "#2196F3" },
+  submitBtn: {
+    backgroundColor: "#2196F3",
+    paddingHorizontal: 30,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  disabledBtn: { backgroundColor: "#B0BEC5" },
+  submitBtnText: { color: "white", fontWeight: "bold", fontSize: 16 },
 });

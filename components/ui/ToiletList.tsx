@@ -1,6 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import {
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  query,
+  where,
+} from "firebase/firestore";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -13,7 +21,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { db } from "../../firebaseConfig";
+import { auth, db } from "../../firebaseConfig";
 import ToiletDetailModal from "../ToiletDetailModal";
 
 // --- CÁC HÀM TIỆN ÍCH ---
@@ -61,7 +69,6 @@ const isOpenNow = () => {
 };
 
 // 👉 CẤU HÌNH BỘ LỌC
-// type: 'sort' (chọn 1) hoặc 'filter' (chọn nhiều)
 const FILTER_OPTIONS = [
   { id: "sort_distance", label: "Gần tôi", type: "sort" },
   { id: "filter_available", label: "Còn phòng", type: "filter" },
@@ -81,10 +88,14 @@ export default function ToiletList() {
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedWC, setSelectedWC] = useState<any>(null);
 
-  // 👉 STATE QUẢN LÝ BỘ LỌC
-  const [activeSort, setActiveSort] = useState("sort_distance"); // Mặc định sắp xếp theo khoảng cách
-  const [activeFilters, setActiveFilters] = useState<string[]>([]); // Danh sách các filter đang bật
+  // 👉 GỘP CHUNG: Lưu cả tên và SĐT vào 1 chỗ cho gọn
+  const [userInfo, setUserInfo] = useState({ name: "", phone: "" });
 
+  // 👉 STATE QUẢN LÝ BỘ LỌC
+  const [activeSort, setActiveSort] = useState("sort_distance");
+  const [activeFilters, setActiveFilters] = useState<string[]>([]);
+
+  // 1. Lấy vị trí hiện tại
   useEffect(() => {
     (async () => {
       let { status } = await Location.requestForegroundPermissionsAsync();
@@ -95,6 +106,36 @@ export default function ToiletList() {
     })();
   }, []);
 
+  // 2. Tự động lấy Info User (Tên + SĐT) khi đã đăng nhập
+  useEffect(() => {
+    // Dùng onAuthStateChanged để chắc chắn Auth đã sẵn sàng
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        let name = user.displayName || "";
+        let phone = user.phoneNumber || "";
+
+        try {
+          // Lấy thêm từ Firestore (để lấy SĐT nếu Auth chưa có)
+          const userDoc = await getDoc(doc(db, "users", user.uid));
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            // Ưu tiên dữ liệu trong Firestore
+            name = data.name || data.displayName || name;
+            phone = data.phone || data.phoneNumber || phone;
+          }
+        } catch (e) {
+          console.log("Lỗi lấy info user:", e);
+        }
+
+        // Cập nhật state một lần duy nhất
+        setUserInfo({ name, phone });
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // 3. Lấy danh sách Toilets Realtime
   useEffect(() => {
     setLoading(true);
     const q = query(
@@ -106,7 +147,6 @@ export default function ToiletList() {
       snapshot.forEach((doc) => {
         const data = doc.data();
 
-        // 🛠️ MÍT FIX: Logic lấy tọa độ thông minh cho List
         let lat = 0;
         let lng = 0;
 
@@ -121,8 +161,8 @@ export default function ToiletList() {
         list.push({
           id: doc.id,
           ...data,
-          rawLat: lat, // Dùng giá trị đã xử lý
-          rawLng: lng, // Dùng giá trị đã xử lý
+          rawLat: lat,
+          rawLng: lng,
         });
       });
       setToilets(list);
@@ -131,13 +171,10 @@ export default function ToiletList() {
     return () => unsubscribe();
   }, []);
 
-  // 👉 HÀM XỬ LÝ KHI BẤM CHIP
   const handleToggleFilter = (id: string, type: string) => {
     if (type === "sort") {
-      // Nếu là Sort: Chỉ được chọn 1, thay thế cái cũ
       setActiveSort(id);
     } else {
-      // Nếu là Filter: Toggle (bật/tắt)
       if (activeFilters.includes(id)) {
         setActiveFilters((prev) => prev.filter((item) => item !== id));
       } else {
@@ -146,9 +183,7 @@ export default function ToiletList() {
     }
   };
 
-  // 👉 LOGIC LỌC VÀ SẮP XẾP PHỨC TẠP
   const processedToilets = useMemo(() => {
-    // 1. Tính khoảng cách
     let list = toilets.map((item) => {
       let dist = 0;
       if (userLocation) {
@@ -162,13 +197,10 @@ export default function ToiletList() {
       return { ...item, distance: dist };
     });
 
-    // 2. Áp dụng các Filter (AND logic)
     if (activeFilters.length > 0) {
       list = list.filter((item) => {
-        // Check từng filter active
         for (const filterId of activeFilters) {
           if (filterId === "filter_available") {
-            // Check giờ mở cửa (đơn giản)
             if (!isOpenNow()) return false;
           }
           if (filterId === "filter_free") {
@@ -178,7 +210,6 @@ export default function ToiletList() {
             filterId.startsWith("filter_") &&
             !["filter_available", "filter_free"].includes(filterId)
           ) {
-            // Check Amenities: Lấy tên tiện ích từ id (vd: filter_hot_water -> hot_water)
             const amenityKey = filterId.replace("filter_", "");
             if (!item.amenities || !item.amenities.includes(amenityKey))
               return false;
@@ -188,17 +219,13 @@ export default function ToiletList() {
       });
     }
 
-    // 3. Áp dụng Sort
     switch (activeSort) {
       case "sort_price":
-        // Giá thấp đến cao
         return list.sort((a, b) => Number(a.price) - Number(b.price));
       case "sort_rating":
-        // Đánh giá cao xuống thấp
         return list.sort((a, b) => (b.rating || 0) - (a.rating || 0));
       case "sort_distance":
       default:
-        // Gần nhất (Mặc định)
         return list.sort((a, b) => a.distance - b.distance);
     }
   }, [toilets, userLocation, activeSort, activeFilters]);
@@ -273,7 +300,6 @@ export default function ToiletList() {
         <Text style={styles.headerTitle}>Địa điểm tắm gần bạn</Text>
       </View>
 
-      {/* 👉 THANH BỘ LỌC ĐA NĂNG */}
       <View style={{ marginBottom: 10 }}>
         <ScrollView
           horizontal
@@ -281,7 +307,6 @@ export default function ToiletList() {
           contentContainerStyle={styles.filterContainer}
         >
           {FILTER_OPTIONS.map((f) => {
-            // Kiểm tra trạng thái Active
             const isActive =
               activeSort === f.id || activeFilters.includes(f.id);
 
@@ -291,7 +316,6 @@ export default function ToiletList() {
                 style={[styles.filterChip, isActive && styles.filterChipActive]}
                 onPress={() => handleToggleFilter(f.id, f.type)}
               >
-                {/* Icon check nhỏ nếu đang active */}
                 {isActive && (
                   <Ionicons
                     name="checkmark"
@@ -362,10 +386,14 @@ export default function ToiletList() {
           }
         />
       )}
+
+      {/* 👇 Cập nhật: Truyền cả tên và sđt xuống modal */}
       <ToiletDetailModal
         visible={modalVisible}
         toilet={selectedWC}
         onClose={() => setModalVisible(false)}
+        initialName={userInfo.name}
+        initialPhone={userInfo.phone}
       />
     </View>
   );
