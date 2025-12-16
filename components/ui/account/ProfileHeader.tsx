@@ -1,6 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { Alert, Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  Alert,
+  Image,
+  Platform,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+// 👉 Import Hook lấy theme
+import { useTheme } from "../../../contexts/ThemeContext";
 
 interface ProfileHeaderProps {
   user: any;
@@ -8,6 +19,7 @@ interface ProfileHeaderProps {
   onEditProfile: () => void;
   onOpenSettings: () => void;
   onLogout: () => void;
+  onChangePassword: () => void;
 }
 
 export default function ProfileHeader({
@@ -16,46 +28,71 @@ export default function ProfileHeader({
   onEditProfile,
   onOpenSettings,
   onLogout,
+  onChangePassword,
 }: ProfileHeaderProps) {
+  // 👉 Lấy bộ màu hiện tại (Sáng/Tối) từ Context
+  const { theme } = useTheme();
+
   return (
-    <View style={styles.profileHeader}>
+    // Áp dụng màu nền và shadow động
+    <View
+      style={[
+        styles.profileHeader,
+        { backgroundColor: theme.card, shadowColor: "#000" },
+      ]}
+    >
       {/* User Info Row */}
       <View style={styles.userInfoRow}>
         <Image
           source={{
             uri:
               user?.photoURL ||
-              `https://ui-avatars.com/api/?name=${user?.displayName || "User"}&background=random`,
+              `https://ui-avatars.com/api/?name=${
+                user?.displayName || "User"
+              }&background=random`,
           }}
           style={styles.avatarLarge}
         />
         <View style={{ flex: 1, justifyContent: "center" }}>
-          <Text style={styles.nameLarge}>
+          <Text style={[styles.nameLarge, { color: theme.text }]}>
             {user?.displayName || "Người dùng"}
           </Text>
-          <Text style={styles.emailLabel}>{user?.email}</Text>
-          <View style={styles.roleBadge}>
-            <Ionicons name="person" size={12} color="#1565C0" />
-            <Text style={styles.roleText}>Thành viên thân thiết</Text>
+          <Text style={[styles.emailLabel, { color: theme.subText }]}>
+            {user?.email}
+          </Text>
+          <View
+            style={[styles.roleBadge, { backgroundColor: theme.background }]}
+          >
+            <Ionicons name="person" size={12} color={theme.primary} />
+            <Text style={[styles.roleText, { color: theme.primary }]}>
+              Thành viên thân thiết
+            </Text>
           </View>
         </View>
         <TouchableOpacity
-          style={styles.editIconBtn}
+          style={[styles.editIconBtn, { backgroundColor: theme.iconBg }]}
           onPress={onOpenSettings}
         >
-          <Ionicons name="settings-outline" size={24} color="#333" />
+          <Ionicons name="settings-outline" size={24} color={theme.text} />
         </TouchableOpacity>
       </View>
 
       {/* Stats Row */}
-      <View style={styles.statsContainer}>
+      <View
+        style={[styles.statsContainer, { backgroundColor: theme.background }]}
+      >
         <View style={styles.statBox}>
-          <Text style={styles.statNumber}>{stats.count}</Text>
+          <Text style={[styles.statNumber, { color: theme.text }]}>
+            {stats.count}
+          </Text>
           <Text style={styles.statLabel}>Lượt trải nghiệm</Text>
         </View>
-        <View style={styles.verticalDivider} />
+        {/* Divider đổi màu theo theme */}
+        <View
+          style={[styles.verticalDivider, { backgroundColor: theme.divider }]}
+        />
         <View style={styles.statBox}>
-          <Text style={styles.statNumber}>0</Text>
+          <Text style={[styles.statNumber, { color: theme.text }]}>0</Text>
           <Text style={styles.statLabel}>Điểm thưởng</Text>
         </View>
       </View>
@@ -63,37 +100,54 @@ export default function ProfileHeader({
       {/* Action Grid */}
       <View style={styles.actionGrid}>
         <TouchableOpacity style={styles.actionItem} onPress={onEditProfile}>
-          <View style={[styles.actionIconCircle, { backgroundColor: "#E3F2FD" }]}>
-            <Ionicons name="create-outline" size={20} color="#1565C0" />
+          <View
+            style={[styles.actionIconCircle, { backgroundColor: theme.iconBg }]}
+          >
+            <Ionicons name="create-outline" size={20} color={theme.primary} />
           </View>
-          <Text style={styles.actionItemText}>Sửa hồ sơ</Text>
+          <Text style={[styles.actionItemText, { color: theme.subText }]}>
+            Sửa hồ sơ
+          </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.actionItem}
-          onPress={() => Alert.alert("Sắp ra mắt", "Chức năng đổi mật khẩu đang phát triển")}
-        >
-          <View style={[styles.actionIconCircle, { backgroundColor: "#FFF3E0" }]}>
-            <Ionicons name="lock-closed-outline" size={20} color="#E65100" />
+        <TouchableOpacity style={styles.actionItem} onPress={onChangePassword}>
+          <View
+            style={[styles.actionIconCircle, { backgroundColor: theme.iconBg }]}
+          >
+            <Ionicons
+              name="lock-closed-outline"
+              size={20}
+              color={theme.warning}
+            />
           </View>
-          <Text style={styles.actionItemText}>Đổi mật khẩu</Text>
+          <Text style={[styles.actionItemText, { color: theme.subText }]}>
+            Đổi mật khẩu
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.actionItem}
           onPress={() => Alert.alert("Ví của tôi", "Số dư: 0 VND")}
         >
-          <View style={[styles.actionIconCircle, { backgroundColor: "#E8F5E9" }]}>
-            <Ionicons name="wallet-outline" size={20} color="#2E7D32" />
+          <View
+            style={[styles.actionIconCircle, { backgroundColor: theme.iconBg }]}
+          >
+            <Ionicons name="wallet-outline" size={20} color={theme.success} />
           </View>
-          <Text style={styles.actionItemText}>Ví của tôi</Text>
+          <Text style={[styles.actionItemText, { color: theme.subText }]}>
+            Ví của tôi
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.actionItem} onPress={onLogout}>
-          <View style={[styles.actionIconCircle, { backgroundColor: "#FFEBEE" }]}>
-            <Ionicons name="log-out-outline" size={20} color="#C62828" />
+          <View
+            style={[styles.actionIconCircle, { backgroundColor: theme.iconBg }]}
+          >
+            <Ionicons name="log-out-outline" size={20} color={theme.danger} />
           </View>
-          <Text style={styles.actionItemText}>Đăng xuất</Text>
+          <Text style={[styles.actionItemText, { color: theme.subText }]}>
+            Đăng xuất
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -102,15 +156,15 @@ export default function ProfileHeader({
 
 const styles = StyleSheet.create({
   profileHeader: {
-    backgroundColor: "white",
     paddingHorizontal: 20,
-    paddingTop: 20, 
+    // Logic tính padding top giữ nguyên cho Android
+    paddingTop:
+      Platform.OS === "android" ? (StatusBar.currentHeight || 24) + 20 : 20,
     paddingBottom: 20,
     marginBottom: 10,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
     elevation: 4,
-    shadowColor: "#000",
     shadowOpacity: 0.05,
     shadowRadius: 10,
   },
@@ -122,36 +176,21 @@ const styles = StyleSheet.create({
     marginRight: 15,
     borderWidth: 2,
     borderColor: "#fff",
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
   },
-  nameLarge: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#1A1A1A",
-    marginBottom: 4,
-  },
-  emailLabel: { fontSize: 13, color: "#666", marginBottom: 6 },
+  nameLarge: { fontSize: 22, fontWeight: "800", marginBottom: 4 },
+  emailLabel: { fontSize: 13, marginBottom: 6 },
   roleBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#E3F2FD",
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 12,
     alignSelf: "flex-start",
   },
-  roleText: {
-    color: "#1565C0",
-    fontWeight: "700",
-    fontSize: 11,
-    marginLeft: 4,
-  },
-  editIconBtn: { padding: 10, backgroundColor: "#F5F5F5", borderRadius: 50 },
+  roleText: { fontWeight: "700", fontSize: 11, marginLeft: 4 },
+  editIconBtn: { padding: 10, borderRadius: 50 },
   statsContainer: {
     flexDirection: "row",
-    backgroundColor: "#F8F9FA",
     borderRadius: 16,
     padding: 15,
     justifyContent: "space-around",
@@ -159,9 +198,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   statBox: { alignItems: "center", flex: 1 },
-  statNumber: { fontSize: 20, fontWeight: "800", color: "#333" },
+  statNumber: { fontSize: 20, fontWeight: "800" },
   statLabel: { fontSize: 12, color: "#888", marginTop: 2 },
-  verticalDivider: { width: 1, height: 30, backgroundColor: "#DDD" },
+  verticalDivider: { width: 1, height: 30 },
   actionGrid: {
     flexDirection: "row",
     justifyContent: "space-around",
@@ -181,7 +220,6 @@ const styles = StyleSheet.create({
   },
   actionItemText: {
     fontSize: 11,
-    color: "#555",
     fontWeight: "500",
     textAlign: "center",
   },

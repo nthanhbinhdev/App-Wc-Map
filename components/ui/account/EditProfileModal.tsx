@@ -1,6 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import * as ImagePicker from "expo-image-picker"; // Import ImagePicker
+import React, { useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -17,7 +19,12 @@ import {
 interface EditProfileModalProps {
   visible: boolean;
   onClose: () => void;
-  onSave: () => void;
+  onSave: (
+    name: string,
+    photoURL: string,
+    phone: string,
+    imageUri: string | null
+  ) => Promise<void>;
   user: any;
   newName: string;
   setNewName: (text: string) => void;
@@ -39,6 +46,45 @@ export default function EditProfileModal({
   newPhone,
   setNewPhone,
 }: EditProfileModalProps) {
+  const [uploading, setUploading] = useState(false);
+  const [localImageUri, setLocalImageUri] = useState<string | null>(null);
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      alert("Cần quyền truy cập thư viện ảnh để thay đổi avatar!");
+      return;
+    }
+
+    try {
+      let result = await ImagePicker.launchImageLibraryAsync({
+        // Quay về dùng MediaTypeOptions để tránh lỗi undefined trên một số phiên bản
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+      });
+
+      if (!result.canceled) {
+        setLocalImageUri(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.log("Lỗi chọn ảnh:", error);
+    }
+  };
+
+  const handleSavePress = async () => {
+    setUploading(true);
+    try {
+      await onSave(newName, newPhotoURL, newPhone, localImageUri);
+      setLocalImageUri(null);
+    } catch (error) {
+      console.error("Lỗi khi lưu profile:", error);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <Modal visible={visible} transparent animationType="slide">
       <KeyboardAvoidingView
@@ -55,25 +101,24 @@ export default function EditProfileModal({
             </View>
 
             <View style={styles.avatarEditContainer}>
-              <Image
-                source={{
-                  uri:
-                    newPhotoURL ||
-                    user?.photoURL ||
-                    `https://ui-avatars.com/api/?name=${user?.displayName || "User"}&background=random`,
-                }}
-                style={styles.avatarLargeEdit}
-              />
-              {/* Tạm thời chỉ cho nhập link ảnh */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Link ảnh đại diện</Text>
-                <TextInput
-                  style={styles.input}
-                  value={newPhotoURL}
-                  onChangeText={setNewPhotoURL}
-                  placeholder="https://..."
+              <TouchableOpacity onPress={pickImage} style={styles.avatarWrapper}>
+                <Image
+                  source={{
+                    uri:
+                      localImageUri ||
+                      newPhotoURL ||
+                      user?.photoURL ||
+                      `https://ui-avatars.com/api/?name=${
+                        user?.displayName || "User"
+                      }&background=random`,
+                  }}
+                  style={styles.avatarLargeEdit}
                 />
-              </View>
+                <View style={styles.cameraIconBadge}>
+                  <Ionicons name="camera" size={18} color="white" />
+                </View>
+              </TouchableOpacity>
+              <Text style={styles.changePhotoText}>Chạm để đổi ảnh</Text>
             </View>
 
             <View style={styles.inputGroup}>
@@ -99,8 +144,16 @@ export default function EditProfileModal({
               />
             </View>
 
-            <TouchableOpacity onPress={onSave} style={styles.saveBtn}>
-              <Text style={styles.saveBtnText}>Lưu thay đổi</Text>
+            <TouchableOpacity
+              onPress={handleSavePress}
+              style={[styles.saveBtn, uploading && { opacity: 0.7 }]}
+              disabled={uploading}
+            >
+              {uploading ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <Text style={styles.saveBtnText}>Lưu thay đổi</Text>
+              )}
             </TouchableOpacity>
           </View>
         </TouchableWithoutFeedback>
@@ -144,6 +197,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 20,
   },
+  avatarWrapper: {
+    position: "relative",
+  },
   avatarLargeEdit: {
     width: 100,
     height: 100,
@@ -152,9 +208,24 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#E0E0E0",
   },
+  cameraIconBadge: {
+    position: "absolute",
+    bottom: 10,
+    right: 0,
+    backgroundColor: "#2196F3",
+    padding: 6,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: "white",
+  },
+  changePhotoText: {
+    color: "#2196F3",
+    fontWeight: "600",
+    fontSize: 13,
+  },
   inputGroup: {
     marginBottom: 15,
-    width: '100%',
+    width: "100%",
   },
   label: {
     fontSize: 14,
@@ -170,7 +241,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: "#F9F9F9",
     color: "#333",
-    width: '100%',
+    width: "100%",
   },
   saveBtn: {
     backgroundColor: "#2196F3",

@@ -1,17 +1,20 @@
-// components/ui/ProviderDashboard.tsx - PHIÊN BẢN HOÀN THIỆN
+// components/ui/ProviderDashboard.tsx
 import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location"; // Import expo-location
 import { useRouter } from "expo-router";
 import {
+  addDoc,
   collection,
   deleteDoc,
   doc,
+  GeoPoint,
   getDocs,
   onSnapshot,
   query,
   updateDoc,
-  where
+  where,
 } from "firebase/firestore";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -23,10 +26,13 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
+import MapView, { Marker, PROVIDER_GOOGLE, Region } from "react-native-maps";
 import QRCode from "react-native-qrcode-svg";
 import { auth, db } from "../../firebaseConfig";
+
+import RoomManagement from "./RoomManagement";
 
 interface Toilet {
   id: string;
@@ -37,6 +43,7 @@ interface Toilet {
   rating: number;
   ratingCount: number;
   amenities: string[];
+  location?: { latitude: number; longitude: number };
 }
 
 interface Stats {
@@ -49,9 +56,23 @@ interface Stats {
   totalRooms: number;
 }
 
+// Danh sách tiện ích mẫu - CẬP NHẬT THEO YÊU CẦU CỦA BÌNH
+const AMENITIES_LIST = [
+  { id: "hot_water", label: "Nước nóng", icon: "thermometer" },
+  { id: "sauna", label: "Xông hơi", icon: "cloud" },
+  { id: "locker", label: "Tủ đồ", icon: "lock-closed" },
+  { id: "parking", label: "Gửi xe", icon: "bicycle" },
+  { id: "accessible", label: "Xe lăn", icon: "accessibility" },
+  { id: "wifi", label: "Wifi", icon: "wifi" },
+  { id: "towel", label: "Khăn tắm", icon: "shirt" },
+];
+
 export default function ProviderDashboard() {
   const router = useRouter();
   const user = auth.currentUser;
+  
+  // Ref cho MapView để điều khiển camera mà không gây re-render liên tục
+  const mapRef = useRef<MapView>(null);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -69,19 +90,45 @@ export default function ProviderDashboard() {
   // Modal states
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [qrModalVisible, setQrModalVisible] = useState(false);
-  const [roomsModalVisible, setRoomsModalVisible] = useState(false);
+  const [roomManagementVisible, setRoomManagementVisible] = useState(false);
+  const [addModalVisible, setAddModalVisible] = useState(false);
 
+  const [selectedManagementToiletId, setSelectedManagementToiletId] = useState<
+    string | null
+  >(null);
   const [editingToilet, setEditingToilet] = useState<Toilet | null>(null);
   const [selectedQRToilet, setSelectedQRToilet] = useState<Toilet | null>(null);
-  const [selectedToiletRooms, setSelectedToiletRooms] = useState<any[]>([]);
 
+  // Edit form states
   const [editName, setEditName] = useState("");
   const [editPrice, setEditPrice] = useState("");
   const [editAddress, setEditAddress] = useState("");
 
+  // Add form states
+  const [newName, setNewName] = useState("");
+  const [newAddress, setNewAddress] = useState("");
+  const [newPrice, setNewPrice] = useState("");
+  const [newAmenities, setNewAmenities] = useState<string[]>([]); // State cho amenities
+  const [newLocation, setNewLocation] = useState<Region>({
+    latitude: 10.762622, // Mặc định HCM
+    longitude: 106.660172,
+    latitudeDelta: 0.005,
+    longitudeDelta: 0.005,
+  });
+
   useEffect(() => {
     fetchDashboardData();
   }, [user]);
+
+  // Xin quyền truy cập vị trí khi mở app
+  useEffect(() => {
+    (async () => {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.log('Permission to access location was denied');
+      }
+    })();
+  }, []);
 
   const fetchDashboardData = async () => {
     if (!user) return;
@@ -89,7 +136,6 @@ export default function ProviderDashboard() {
     try {
       if (!refreshing) setLoading(true);
 
-      // 1. Fetch toilets
       const qToilets = query(
         collection(db, "toilets"),
         where("createdBy", "==", user.email)
@@ -111,6 +157,9 @@ export default function ProviderDashboard() {
             rating: data.rating || 5.0,
             ratingCount: data.ratingCount || 0,
             amenities: data.amenities || [],
+            location: data.location
+              ? { latitude: data.location.latitude, longitude: data.location.longitude }
+              : undefined,
           });
 
           if (data.status === "approved") approved++;
@@ -118,8 +167,6 @@ export default function ProviderDashboard() {
         });
 
         setMyToilets(list);
-
-        // 2. Fetch bookings & rooms statistics
         await fetchAdditionalStats(list, approved, pending);
       });
 
@@ -154,7 +201,6 @@ export default function ProviderDashboard() {
         return;
       }
 
-      // Fetch bookings (với chunking nếu cần)
       const chunks = [];
       const CHUNK_SIZE = 10;
       for (let i = 0; i < toiletIds.length; i += CHUNK_SIZE) {
@@ -177,19 +223,13 @@ export default function ProviderDashboard() {
 
         snapBookings.forEach((doc) => {
           const booking = doc.data();
-
-          // Today's bookings
           const bookingDate = new Date(booking.bookingTime);
           if (bookingDate >= today) {
             todayBookings++;
           }
-
-          // Active bookings
           if (["pending", "confirmed", "checked_in"].includes(booking.status)) {
             activeBookings++;
           }
-
-          // Revenue (completed bookings)
           if (
             booking.status === "completed" &&
             booking.paymentStatus === "paid"
@@ -199,7 +239,6 @@ export default function ProviderDashboard() {
         });
       }
 
-      // Fetch rooms count
       let totalRooms = 0;
       for (const chunk of chunks) {
         const qRooms = query(
@@ -229,7 +268,105 @@ export default function ProviderDashboard() {
     fetchDashboardData();
   };
 
-  // CRUD Operations
+  // --- LOCATION HELPERS ---
+
+  // 1. Lấy vị trí hiện tại của user (FIX LAG: Dùng animateToRegion)
+  const handleGetCurrentLocation = async () => {
+    try {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Quyền truy cập', 'Cần quyền truy cập vị trí để sử dụng tính năng này.');
+        return;
+      }
+
+      let location = await Location.getCurrentPositionAsync({});
+      const newRegion = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      };
+      
+      setNewLocation(newRegion);
+      // Di chuyển camera mượt mà đến vị trí mới
+      mapRef.current?.animateToRegion(newRegion, 1000); 
+
+    } catch (error) {
+      Alert.alert("Lỗi", "Không thể lấy vị trí hiện tại.");
+    }
+  };
+
+  // 2. Tìm vị trí từ địa chỉ nhập vào (FIX LAG: Dùng animateToRegion)
+  const handleGeocodeAddress = async () => {
+    if (!newAddress) {
+      Alert.alert("Chưa nhập địa chỉ", "Vui lòng nhập địa chỉ để tìm kiếm.");
+      return;
+    }
+    try {
+      let geocodedLocation = await Location.geocodeAsync(newAddress);
+      if (geocodedLocation.length > 0) {
+        const { latitude, longitude } = geocodedLocation[0];
+        const newRegion = {
+          latitude,
+          longitude,
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.005,
+        };
+        setNewLocation(newRegion);
+        // Di chuyển camera mượt mà đến vị trí tìm thấy
+        mapRef.current?.animateToRegion(newRegion, 1000);
+      } else {
+        Alert.alert("Không tìm thấy", "Không thể tìm thấy vị trí cho địa chỉ này.");
+      }
+    } catch (error) {
+      Alert.alert("Lỗi", "Có lỗi xảy ra khi tìm kiếm địa chỉ.");
+    }
+  };
+
+  // --- CRUD Operations ---
+
+  const handleAddNewFacility = async () => {
+    if (!newName || !newAddress || !newPrice) {
+      Alert.alert("Thiếu thông tin", "Vui lòng nhập đầy đủ tên, địa chỉ và giá.");
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, "toilets"), {
+        name: newName.trim(),
+        address: newAddress.trim(),
+        price: Number(newPrice),
+        createdBy: user?.email,
+        status: "pending",
+        rating: 5.0,
+        ratingCount: 0,
+        amenities: newAmenities, // Lưu danh sách tiện ích
+        createdAt: new Date().toISOString(),
+        location: new GeoPoint(newLocation.latitude, newLocation.longitude),
+      });
+
+      Alert.alert("✅ Thành công", "Đã thêm địa điểm mới!");
+      setAddModalVisible(false);
+      
+      // Reset form
+      setNewName("");
+      setNewAddress("");
+      setNewPrice("");
+      setNewAmenities([]);
+    } catch (error: any) {
+      Alert.alert("❌ Lỗi", error.message);
+    }
+  };
+
+  // Toggle tiện ích
+  const toggleAmenity = (id: string) => {
+    if (newAmenities.includes(id)) {
+      setNewAmenities(newAmenities.filter((item) => item !== id));
+    } else {
+      setNewAmenities([...newAmenities, id]);
+    }
+  };
+
   const handleEdit = (item: Toilet) => {
     setEditingToilet(item);
     setEditName(item.name);
@@ -267,10 +404,7 @@ export default function ProviderDashboard() {
           style: "destructive",
           onPress: async () => {
             try {
-              // Xóa toilet
               await deleteDoc(doc(db, "toilets", item.id));
-
-              // Xóa các phòng liên quan
               const qRooms = query(
                 collection(db, "rooms"),
                 where("toiletId", "==", item.id)
@@ -280,7 +414,6 @@ export default function ProviderDashboard() {
                 deleteDoc(d.ref)
               );
               await Promise.all(deletePromises);
-
               Alert.alert("✅ Đã xóa", "Địa điểm đã được xóa khỏi hệ thống");
             } catch (error: any) {
               Alert.alert("❌ Lỗi", error.message);
@@ -296,20 +429,9 @@ export default function ProviderDashboard() {
     setQrModalVisible(true);
   };
 
-  const handleShowRooms = async (item: Toilet) => {
-    try {
-      const qRooms = query(
-        collection(db, "rooms"),
-        where("toiletId", "==", item.id)
-      );
-      const snap = await getDocs(qRooms);
-      const rooms = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-      setSelectedToiletRooms(rooms);
-      setRoomsModalVisible(true);
-    } catch (error) {
-      Alert.alert("Lỗi", "Không thể tải danh sách phòng");
-    }
+  const handleManageRooms = (item: Toilet) => {
+    setSelectedManagementToiletId(item.id);
+    setRoomManagementVisible(true);
   };
 
   // Navigation
@@ -317,14 +439,13 @@ export default function ProviderDashboard() {
     router.push("/(tabs)/bookings");
   };
 
-  const navigateToAddFacility = () => {
-    router.push("/(tabs)/profile");
-  };
-
-  // Render
+  // Render Item
   const renderToiletItem = ({ item }: { item: Toilet }) => (
     <View style={styles.card}>
-      <View style={{ flex: 1 }}>
+      <TouchableOpacity
+        style={{ flex: 1 }}
+        onPress={() => handleManageRooms(item)}
+      >
         <View style={styles.cardHeader}>
           <Text style={styles.cardName} numberOfLines={1}>
             {item.name}
@@ -363,11 +484,22 @@ export default function ProviderDashboard() {
             <Text style={styles.reviewCount}>({item.ratingCount})</Text>
           </View>
         </View>
-      </View>
+        {/* Hiển thị tiện ích dạng mini */}
+        {item.amenities && item.amenities.length > 0 && (
+          <View style={styles.amenitiesRowMini}>
+            {item.amenities.slice(0, 4).map((key) => {
+              const am = AMENITIES_LIST.find((a) => a.id === key);
+              if (!am) return null;
+              return <Ionicons key={key} name={am.icon as any} size={12} color="#999" style={{marginRight: 4}} />;
+            })}
+            {item.amenities.length > 4 && <Text style={{fontSize: 10, color: '#999'}}>...</Text>}
+          </View>
+        )}
+      </TouchableOpacity>
 
       <View style={styles.actionColumn}>
         <TouchableOpacity
-          onPress={() => handleShowRooms(item)}
+          onPress={() => handleManageRooms(item)}
           style={styles.iconBtn}
         >
           <Ionicons name="bed" size={18} color="#2196F3" />
@@ -425,7 +557,7 @@ export default function ProviderDashboard() {
             <View style={styles.header}>
               <Text style={styles.headerTitle}>Dashboard Kinh Doanh</Text>
               <TouchableOpacity
-                onPress={navigateToAddFacility}
+                onPress={() => setAddModalVisible(true)}
                 style={styles.addBtn}
               >
                 <Ionicons name="add-circle" size={24} color="white" />
@@ -434,6 +566,7 @@ export default function ProviderDashboard() {
 
             {/* Stats Grid */}
             <View style={styles.statsSection}>
+              {/* ... (Giữ nguyên Stats Grid) ... */}
               <View style={styles.statsGrid}>
                 <View style={[styles.statCard, { backgroundColor: "#E3F2FD" }]}>
                   <Ionicons name="business" size={24} color="#2196F3" />
@@ -441,13 +574,17 @@ export default function ProviderDashboard() {
                   <Text style={styles.statLabel}>Địa điểm</Text>
                 </View>
 
-                <View style={[styles.statCard, { backgroundColor: "#E8F5E9" }]}>
+                <View
+                  style={[styles.statCard, { backgroundColor: "#E8F5E9" }]}
+                >
                   <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
                   <Text style={styles.statValue}>{stats.approved}</Text>
                   <Text style={styles.statLabel}>Đã duyệt</Text>
                 </View>
 
-                <View style={[styles.statCard, { backgroundColor: "#FFF3E0" }]}>
+                <View
+                  style={[styles.statCard, { backgroundColor: "#FFF3E0" }]}
+                >
                   <Ionicons name="time" size={24} color="#FF9800" />
                   <Text style={styles.statValue}>{stats.pending}</Text>
                   <Text style={styles.statLabel}>Chờ duyệt</Text>
@@ -455,7 +592,9 @@ export default function ProviderDashboard() {
               </View>
 
               <View style={styles.statsGrid}>
-                <View style={[styles.statCard, { backgroundColor: "#F3E5F5" }]}>
+                <View
+                  style={[styles.statCard, { backgroundColor: "#F3E5F5" }]}
+                >
                   <Ionicons name="cash" size={24} color="#9C27B0" />
                   <Text style={styles.statValue}>
                     {(stats.totalRevenue / 1000).toFixed(0)}K
@@ -463,13 +602,17 @@ export default function ProviderDashboard() {
                   <Text style={styles.statLabel}>Doanh thu</Text>
                 </View>
 
-                <View style={[styles.statCard, { backgroundColor: "#E0F2F1" }]}>
+                <View
+                  style={[styles.statCard, { backgroundColor: "#E0F2F1" }]}
+                >
                   <Ionicons name="calendar" size={24} color="#00796B" />
                   <Text style={styles.statValue}>{stats.todayBookings}</Text>
                   <Text style={styles.statLabel}>Hôm nay</Text>
                 </View>
 
-                <View style={[styles.statCard, { backgroundColor: "#FFEBEE" }]}>
+                <View
+                  style={[styles.statCard, { backgroundColor: "#FFEBEE" }]}
+                >
                   <Ionicons name="people" size={24} color="#C62828" />
                   <Text style={styles.statValue}>{stats.activeBookings}</Text>
                   <Text style={styles.statLabel}>Đang hoạt động</Text>
@@ -495,7 +638,7 @@ export default function ProviderDashboard() {
 
                 <TouchableOpacity
                   style={styles.actionCard}
-                  onPress={navigateToAddFacility}
+                  onPress={() => setAddModalVisible(true)}
                 >
                   <Ionicons
                     name="add-circle-outline"
@@ -503,6 +646,22 @@ export default function ProviderDashboard() {
                     color="#4CAF50"
                   />
                   <Text style={styles.actionText}>Thêm địa điểm</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.actionCard}
+                  onPress={() => {
+                    setSelectedManagementToiletId(null);
+                    setRoomManagementVisible(true);
+                  }}
+                >
+                  <Ionicons name="bed-outline" size={28} color="#9C27B0" />
+                  <Text style={styles.actionText}>Quản lý phòng</Text>
+                  {stats.totalRooms > 0 && (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>{stats.totalRooms}</Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
@@ -523,7 +682,7 @@ export default function ProviderDashboard() {
             </Text>
             <TouchableOpacity
               style={styles.emptyBtn}
-              onPress={navigateToAddFacility}
+              onPress={() => setAddModalVisible(true)}
             >
               <Ionicons name="add-circle" size={24} color="white" />
               <Text style={styles.emptyBtnText}>Thêm ngay</Text>
@@ -532,6 +691,137 @@ export default function ProviderDashboard() {
         }
         contentContainerStyle={styles.listContent}
       />
+
+      {/* --- ADD NEW FACILITY MODAL (UPDATED) --- */}
+      <Modal visible={addModalVisible} animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: "95%" }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Thêm Địa Điểm Mới</Text>
+              <TouchableOpacity onPress={() => setAddModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.inputLabel}>Tên địa điểm</Text>
+              <TextInput
+                style={styles.input}
+                value={newName}
+                onChangeText={setNewName}
+                placeholder="Ví dụ: WC Công Cộng A1"
+              />
+
+              <Text style={styles.inputLabel}>Địa chỉ hiển thị</Text>
+              <View style={{flexDirection: 'row', gap: 10}}>
+                <TextInput
+                  style={[styles.input, {flex: 1}]}
+                  value={newAddress}
+                  onChangeText={setNewAddress}
+                  placeholder="Số 123, Đường ABC..."
+                />
+                <TouchableOpacity 
+                  style={styles.searchLocationBtn} 
+                  onPress={handleGeocodeAddress}
+                >
+                  <Ionicons name="search" size={24} color="white" />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.inputLabel}>Giá vé cơ bản (VNĐ)</Text>
+              <TextInput
+                style={styles.input}
+                value={newPrice}
+                onChangeText={setNewPrice}
+                placeholder="5000"
+                keyboardType="numeric"
+              />
+
+              {/* Tiện ích (Amenities) Section */}
+              <Text style={styles.inputLabel}>Tiện ích & Dịch vụ</Text>
+              <View style={styles.amenitiesContainer}>
+                {AMENITIES_LIST.map((item) => {
+                  const isSelected = newAmenities.includes(item.id);
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[
+                        styles.amenityChip,
+                        isSelected && styles.amenityChipActive,
+                      ]}
+                      onPress={() => toggleAmenity(item.id)}
+                    >
+                      <Ionicons
+                        name={item.icon as any}
+                        size={16}
+                        color={isSelected ? "white" : "#666"}
+                      />
+                      <Text
+                        style={[
+                          styles.amenityText,
+                          isSelected && styles.amenityTextActive,
+                        ]}
+                      >
+                        {item.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.inputLabel}>Vị trí chính xác (Kéo bản đồ)</Text>
+              <View style={styles.mapContainer}>
+                <MapView
+                  ref={mapRef} // Gắn ref để điều khiển camera
+                  provider={PROVIDER_GOOGLE}
+                  style={styles.map}
+                  initialRegion={newLocation} // Dùng initialRegion thay vì region để tránh giật
+                  onRegionChangeComplete={(region) => setNewLocation(region)}
+                >
+                  <Marker
+                    coordinate={{
+                      latitude: newLocation.latitude,
+                      longitude: newLocation.longitude,
+                    }}
+                    title="Vị trí địa điểm"
+                  />
+                </MapView>
+                
+                {/* Crosshair */}
+                <View style={styles.mapCrosshair}>
+                  <Ionicons name="add" size={30} color="#2196F3" />
+                </View>
+
+                {/* Nút định vị tôi */}
+                <TouchableOpacity 
+                  style={styles.locateMeBtn} 
+                  onPress={handleGetCurrentLocation}
+                >
+                  <Ionicons name="locate" size={24} color="#2196F3" />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.coordsText}>
+                Lat: {newLocation.latitude.toFixed(6)}, Lng: {newLocation.longitude.toFixed(6)}
+              </Text>
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  onPress={() => setAddModalVisible(false)}
+                  style={styles.cancelBtn}
+                >
+                  <Text style={styles.cancelBtnText}>Hủy</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleAddNewFacility}
+                  style={styles.confirmBtn}
+                >
+                  <Text style={styles.confirmBtnText}>Tạo Địa Điểm</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* Edit Modal */}
       <Modal visible={editModalVisible} transparent animationType="slide">
@@ -544,18 +834,21 @@ export default function ProviderDashboard() {
               </TouchableOpacity>
             </View>
 
+            <Text style={styles.inputLabel}>Tên địa điểm</Text>
             <TextInput
               style={styles.input}
               value={editName}
               onChangeText={setEditName}
               placeholder="Tên địa điểm"
             />
+            <Text style={styles.inputLabel}>Địa chỉ</Text>
             <TextInput
               style={styles.input}
               value={editAddress}
               onChangeText={setEditAddress}
               placeholder="Địa chỉ"
             />
+            <Text style={styles.inputLabel}>Giá vé</Text>
             <TextInput
               style={styles.input}
               value={editPrice}
@@ -625,80 +918,22 @@ export default function ProviderDashboard() {
         </View>
       </Modal>
 
-      {/* Rooms Modal */}
-      <Modal visible={roomsModalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.roomsModalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Danh sách phòng</Text>
-              <TouchableOpacity onPress={() => setRoomsModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#333" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.roomsList}>
-              {selectedToiletRooms.length === 0 ? (
-                <Text style={styles.noRoomsText}>
-                  Chưa có phòng nào. Vui lòng thêm phòng trong phần quản lý.
-                </Text>
-              ) : (
-                selectedToiletRooms.map((room) => (
-                  <View key={room.id} style={styles.roomCard}>
-                    <View style={styles.roomHeader}>
-                      <Text style={styles.roomNumber}>
-                        Phòng {room.roomNumber}
-                      </Text>
-                      <View
-                        style={[
-                          styles.roomStatusBadge,
-                          {
-                            backgroundColor:
-                              room.status === "available"
-                                ? "#E8F5E9"
-                                : room.status === "occupied"
-                                ? "#FFEBEE"
-                                : "#FFF3E0",
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.roomStatusText,
-                            {
-                              color:
-                                room.status === "available"
-                                  ? "#4CAF50"
-                                  : room.status === "occupied"
-                                  ? "#F44336"
-                                  : "#FF9800",
-                            },
-                          ]}
-                        >
-                          {room.status === "available"
-                            ? "Trống"
-                            : room.status === "occupied"
-                            ? "Đang dùng"
-                            : "Đã đặt"}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={styles.roomType}>
-                      Loại:{" "}
-                      {room.type === "single"
-                        ? "Đơn"
-                        : room.type === "couple"
-                        ? "Đôi"
-                        : "Gia đình"}
-                    </Text>
-                    <Text style={styles.roomPrice}>
-                      {room.price?.toLocaleString()}đ / lượt
-                    </Text>
-                  </View>
-                ))
-              )}
-            </ScrollView>
-          </View>
-        </View>
+      {/* Room Management Modal */}
+      <Modal
+        visible={roomManagementVisible}
+        animationType="slide"
+        onRequestClose={() => {
+          setRoomManagementVisible(false);
+          setSelectedManagementToiletId(null);
+        }}
+      >
+        <RoomManagement
+          onClose={() => {
+            setRoomManagementVisible(false);
+            setSelectedManagementToiletId(null);
+          }}
+          initialToiletId={selectedManagementToiletId}
+        />
       </Modal>
     </View>
   );
@@ -861,6 +1096,11 @@ const styles = StyleSheet.create({
     color: "#333",
   },
   reviewCount: { fontSize: 12, color: "#999" },
+  amenitiesRowMini: {
+    flexDirection: 'row',
+    marginTop: 8,
+    alignItems: 'center',
+  },
 
   // Action Column
   actionColumn: {
@@ -928,12 +1168,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 15,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: "bold",
     color: "#333",
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#666",
+    marginBottom: 5,
+    marginTop: 10,
   },
   input: {
     borderWidth: 1,
@@ -941,13 +1188,50 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     fontSize: 16,
-    marginBottom: 15,
     backgroundColor: "#F9F9F9",
+  },
+  searchLocationBtn: {
+    backgroundColor: '#2196F3',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+    paddingHorizontal: 15,
+  },
+  amenitiesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 5,
+  },
+  amenityChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F5F5F5',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    gap: 6,
+  },
+  amenityChipActive: {
+    backgroundColor: '#2196F3',
+    borderColor: '#2196F3',
+  },
+  amenityText: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500',
+  },
+  amenityTextActive: {
+    color: 'white',
+    fontWeight: 'bold',
   },
   modalButtons: {
     flexDirection: "row",
     gap: 10,
-    marginTop: 10,
+    marginTop: 20,
+    marginBottom: 10,
   },
   cancelBtn: {
     flex: 1,
@@ -965,6 +1249,49 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   confirmBtnText: { color: "white", fontWeight: "bold" },
+
+  // Map Styles
+  mapContainer: {
+    height: 250,
+    borderRadius: 16,
+    overflow: "hidden",
+    marginVertical: 10,
+    position: "relative",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+  },
+  map: {
+    width: "100%",
+    height: "100%",
+  },
+  mapCrosshair: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    marginTop: -15,
+    marginLeft: -15,
+    pointerEvents: "none",
+  },
+  locateMeBtn: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    backgroundColor: 'white',
+    padding: 10,
+    borderRadius: 25,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+  },
+  coordsText: {
+    textAlign: "center",
+    fontSize: 11,
+    color: "#999",
+    fontFamily: "monospace",
+  },
 
   // QR Modal
   qrModalContent: {

@@ -2,6 +2,8 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context'; // 👉 Thêm cái này
+import { ThemeProvider } from '../contexts/ThemeContext'; // 👉 Import Provider
 import { auth } from '../firebaseConfig';
 
 export default function RootLayout() {
@@ -44,11 +46,15 @@ export default function RootLayout() {
     );
   }
 
-  // 4. Khai báo các màn hình
+  // 4. Khai báo các màn hình & Bọc ThemeProvider
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="login" />
-      <Stack.Screen name="(tabs)" />
-    </Stack>
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="login" />
+          <Stack.Screen name="(tabs)" />
+        </Stack>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }

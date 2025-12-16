@@ -105,11 +105,24 @@ export default function ToiletList() {
       const list: any[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
+
+        // 🛠️ MÍT FIX: Logic lấy tọa độ thông minh cho List
+        let lat = 0;
+        let lng = 0;
+
+        if (data.location && typeof data.location.latitude === "number") {
+          lat = data.location.latitude;
+          lng = data.location.longitude;
+        } else if (data.latitude && data.longitude) {
+          lat = data.latitude;
+          lng = data.longitude;
+        }
+
         list.push({
           id: doc.id,
           ...data,
-          rawLat: data.latitude,
-          rawLng: data.longitude,
+          rawLat: lat, // Dùng giá trị đã xử lý
+          rawLng: lng, // Dùng giá trị đã xử lý
         });
       });
       setToilets(list);

@@ -11,6 +11,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+// 👉 Import Hook từ context mình vừa tạo
+import { useTheme } from "../../../contexts/ThemeContext";
 
 interface SettingsModalProps {
   visible: boolean;
@@ -25,8 +27,10 @@ export default function SettingsModal({
   onLogout,
   onEditProfile,
 }: SettingsModalProps) {
-  // Settings states (Giả lập)
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  // 👉 Lấy theme, trạng thái tối, và hàm đổi màu từ kho tổng
+  const { theme, isDarkMode, toggleTheme } = useTheme();
+
+  // State cục bộ cho thông báo (cái này chưa có logic backend nên giữ local)
   const [isNotificationsEnabled, setIsNotificationsEnabled] = useState(true);
 
   return (
@@ -36,58 +40,84 @@ export default function SettingsModal({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View style={styles.settingsContainer}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalHeaderTitle}>Cài đặt</Text>
-          <TouchableOpacity onPress={onClose} style={styles.modalCloseBtn}>
-            <Ionicons name="close" size={24} color="#333" />
+      <View
+        style={[
+          styles.settingsContainer,
+          { backgroundColor: theme.background },
+        ]}
+      >
+        {/* Header */}
+        <View
+          style={[
+            styles.modalHeader,
+            { backgroundColor: theme.card, borderBottomColor: theme.border },
+          ]}
+        >
+          <Text style={[styles.modalHeaderTitle, { color: theme.text }]}>
+            Cài đặt
+          </Text>
+          <TouchableOpacity
+            onPress={onClose}
+            style={[styles.modalCloseBtn, { backgroundColor: theme.iconBg }]}
+          >
+            <Ionicons name="close" size={24} color={theme.text} />
           </TouchableOpacity>
         </View>
+
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
-          {/* Nhóm Chung */}
+          {/* --- Nhóm Chung --- */}
           <Text style={styles.settingGroupTitle}>Chung</Text>
-          <View style={styles.settingGroup}>
-            <View style={styles.settingItem}>
+          <View style={[styles.settingGroup, { backgroundColor: theme.card }]}>
+            {/* Mục Thông báo */}
+            <View
+              style={[styles.settingItem, { borderBottomColor: theme.border }]}
+            >
               <View style={{ flexDirection: "row", alignItems: "center" }}>
                 <Ionicons
                   name="notifications-outline"
                   size={22}
-                  color="#555"
+                  color={theme.text}
                   style={{ marginRight: 10 }}
                 />
-                <Text style={styles.settingText}>Thông báo</Text>
+                <Text style={[styles.settingText, { color: theme.text }]}>
+                  Thông báo
+                </Text>
               </View>
               <Switch
                 value={isNotificationsEnabled}
                 onValueChange={setIsNotificationsEnabled}
-                trackColor={{ false: "#767577", true: "#81b0ff" }}
-                thumbColor={isNotificationsEnabled ? "#2196F3" : "#f4f3f4"}
+                trackColor={{ false: "#767577", true: theme.success }}
+                thumbColor={Platform.OS === "android" ? "#f4f3f4" : undefined}
               />
             </View>
+
+            {/* Mục Chế độ tối (Logic chính nằm ở đây) */}
             <View style={[styles.settingItem, { borderBottomWidth: 0 }]}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
                 <Ionicons
-                  name="moon-outline"
+                  name={isDarkMode ? "moon" : "moon-outline"} // Đổi icon theo chế độ
                   size={22}
-                  color="#555"
+                  color={theme.text}
                   style={{ marginRight: 10 }}
                 />
-                <Text style={styles.settingText}>Chế độ tối</Text>
+                <Text style={[styles.settingText, { color: theme.text }]}>
+                  Chế độ tối
+                </Text>
               </View>
               <Switch
                 value={isDarkMode}
-                onValueChange={setIsDarkMode}
-                trackColor={{ false: "#767577", true: "#81b0ff" }}
-                thumbColor={isDarkMode ? "#2196F3" : "#f4f3f4"}
+                onValueChange={toggleTheme} // 👉 Gọi hàm đổi theme toàn app
+                trackColor={{ false: "#767577", true: theme.success }}
+                thumbColor={Platform.OS === "android" ? "#f4f3f4" : undefined}
               />
             </View>
           </View>
 
-          {/* Nhóm Tài khoản */}
+          {/* --- Nhóm Tài khoản --- */}
           <Text style={styles.settingGroupTitle}>Tài khoản</Text>
-          <View style={styles.settingGroup}>
+          <View style={[styles.settingGroup, { backgroundColor: theme.card }]}>
             <TouchableOpacity
-              style={styles.settingItem}
+              style={[styles.settingItem, { borderBottomColor: theme.border }]}
               onPress={() => {
                 onClose();
                 onEditProfile();
@@ -97,15 +127,22 @@ export default function SettingsModal({
                 <Ionicons
                   name="person-outline"
                   size={22}
-                  color="#555"
+                  color={theme.text}
                   style={{ marginRight: 10 }}
                 />
-                <Text style={styles.settingText}>Thông tin cá nhân</Text>
+                <Text style={[styles.settingText, { color: theme.text }]}>
+                  Thông tin cá nhân
+                </Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#ccc" />
+              <Ionicons
+                name="chevron-forward"
+                size={20}
+                color={theme.subText}
+              />
             </TouchableOpacity>
+
             <TouchableOpacity
-              style={styles.settingItem}
+              style={[styles.settingItem, { borderBottomWidth: 0 }]}
               onPress={() =>
                 Alert.alert("Thông báo", "Chức năng ngôn ngữ đang phát triển")
               }
@@ -114,23 +151,31 @@ export default function SettingsModal({
                 <Ionicons
                   name="language-outline"
                   size={22}
-                  color="#555"
+                  color={theme.text}
                   style={{ marginRight: 10 }}
                 />
-                <Text style={styles.settingText}>Ngôn ngữ</Text>
+                <Text style={[styles.settingText, { color: theme.text }]}>
+                  Ngôn ngữ
+                </Text>
               </View>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Text style={{ color: "#888", marginRight: 5 }}>Tiếng Việt</Text>
-                <Ionicons name="chevron-forward" size={20} color="#ccc" />
+                <Text style={{ color: theme.subText, marginRight: 5 }}>
+                  Tiếng Việt
+                </Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={20}
+                  color={theme.subText}
+                />
               </View>
             </TouchableOpacity>
           </View>
 
-          {/* Nhóm Hỗ trợ */}
+          {/* --- Nhóm Hỗ trợ --- */}
           <Text style={styles.settingGroupTitle}>Hỗ trợ</Text>
-          <View style={styles.settingGroup}>
+          <View style={[styles.settingGroup, { backgroundColor: theme.card }]}>
             <TouchableOpacity
-              style={styles.settingItem}
+              style={[styles.settingItem, { borderBottomColor: theme.border }]}
               onPress={() =>
                 Alert.alert(
                   "Liên hệ",
@@ -142,13 +187,20 @@ export default function SettingsModal({
                 <Ionicons
                   name="mail-outline"
                   size={22}
-                  color="#555"
+                  color={theme.text}
                   style={{ marginRight: 10 }}
                 />
-                <Text style={styles.settingText}>Gửi phản hồi</Text>
+                <Text style={[styles.settingText, { color: theme.text }]}>
+                  Gửi phản hồi
+                </Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#ccc" />
+              <Ionicons
+                name="chevron-forward"
+                size={20}
+                color={theme.subText}
+              />
             </TouchableOpacity>
+
             <TouchableOpacity
               style={[styles.settingItem, { borderBottomWidth: 0 }]}
               onPress={() => Alert.alert("Thông tin", "Phiên bản: 1.0.0")}
@@ -157,26 +209,41 @@ export default function SettingsModal({
                 <Ionicons
                   name="information-circle-outline"
                   size={22}
-                  color="#555"
+                  color={theme.text}
                   style={{ marginRight: 10 }}
                 />
-                <Text style={styles.settingText}>Về ứng dụng</Text>
+                <Text style={[styles.settingText, { color: theme.text }]}>
+                  Về ứng dụng
+                </Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#ccc" />
+              <Ionicons
+                name="chevron-forward"
+                size={20}
+                color={theme.subText}
+              />
             </TouchableOpacity>
           </View>
 
           <View style={{ height: 30 }} />
+
           <TouchableOpacity
-            style={styles.logoutBtn}
+            style={[
+              styles.logoutBtn,
+              { backgroundColor: theme.isDark ? "#3A1A1A" : "#FFEBEE" },
+            ]}
             onPress={() => {
               onClose();
               onLogout();
             }}
           >
-            <Text style={styles.logoutText}>Đăng xuất</Text>
+            <Text style={[styles.logoutText, { color: theme.danger }]}>
+              Đăng xuất
+            </Text>
           </TouchableOpacity>
-          <Text style={styles.versionText}>Phiên bản 1.0.0</Text>
+
+          <Text style={[styles.versionText, { color: theme.subText }]}>
+            Phiên bản 1.0.0
+          </Text>
         </ScrollView>
       </View>
     </Modal>
@@ -186,23 +253,20 @@ export default function SettingsModal({
 const styles = StyleSheet.create({
   settingsContainer: {
     flex: 1,
-    backgroundColor: "#F2F2F7", // Màu nền kiểu iOS Setting
+    // Background color được set động trong component
   },
   modalHeader: {
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
     paddingTop: Platform.OS === "android" ? 40 : 20,
-    backgroundColor: "white",
     borderBottomWidth: 1,
-    borderBottomColor: "#EEE",
     justifyContent: "space-between",
   },
-  modalCloseBtn: { padding: 8, borderRadius: 20, backgroundColor: "#F5F5F5" },
+  modalCloseBtn: { padding: 8, borderRadius: 20 },
   modalHeaderTitle: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#333",
   },
   settingGroupTitle: {
     fontSize: 14,
@@ -214,7 +278,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   settingGroup: {
-    backgroundColor: "white",
     borderRadius: 12,
     paddingHorizontal: 16,
   },
@@ -224,27 +287,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F0F0",
   },
   settingText: {
     fontSize: 16,
-    color: "#333",
   },
   logoutBtn: {
-    backgroundColor: "#FFEBEE",
     padding: 16,
     borderRadius: 12,
     alignItems: "center",
     marginBottom: 10,
   },
   logoutText: {
-    color: "#D32F2F",
     fontWeight: "700",
     fontSize: 16,
   },
   versionText: {
     textAlign: "center",
-    color: "#999",
     fontSize: 12,
     marginBottom: 20,
   },

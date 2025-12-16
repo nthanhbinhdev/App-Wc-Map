@@ -18,7 +18,6 @@ import ToiletDetailModal from "../ToiletDetailModal";
 
 // 👉 CẬP NHẬT BỘ LỌC CHI TIẾT HƠN
 const FILTERS = [
-  // Bỏ 'all' ra khỏi list để xử lý riêng hoặc coi rỗng là all
   { id: "hot_water", label: "Nước nóng", icon: "thermometer" },
   { id: "sauna", label: "Xông hơi", icon: "cloud" },
   { id: "locker", label: "Tủ đồ", icon: "lock-closed" },
@@ -28,129 +27,7 @@ const FILTERS = [
   { id: "towel", label: "Khăn tắm", icon: "shirt" },
 ];
 
-// 👉 DỮ LIỆU MOCK (Giả lập) - Rải rác khắp Sài Gòn
-const MOCK_BATHHOUSES = [
-  {
-    id: "mock_1",
-    name: "Phòng Tắm Công Cộng Tao Đàn",
-    address: "Công viên Tao Đàn, Quận 1",
-    latitude: 10.7745,
-    longitude: 106.6923,
-    price: 15000,
-    rating: 4.2,
-    ratingCount: 128,
-    amenities: ["hot_water", "locker", "parking"],
-    status: "approved",
-    image: "https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?w=600",
-  },
-  {
-    id: "mock_2",
-    name: "Bath Station Bình Thạnh",
-    address: "15 Nguyễn Gia Trí, Bình Thạnh",
-    latitude: 10.8019,
-    longitude: 106.7113,
-    price: 30000,
-    rating: 4.8,
-    ratingCount: 56,
-    amenities: ["hot_water", "sauna", "locker", "parking", "wifi"],
-    status: "approved",
-    image: "https://images.unsplash.com/photo-1507652313519-d4e9174996dd?w=600",
-  },
-  {
-    id: "mock_3",
-    name: "Nhà Tắm Tiện Lợi Q5",
-    address: "Trần Hưng Đạo, Quận 5",
-    latitude: 10.7537,
-    longitude: 106.6718,
-    price: 10000,
-    rating: 3.9,
-    ratingCount: 89,
-    amenities: ["locker", "parking"],
-    status: "approved",
-    image: "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=600",
-  },
-  {
-    id: "mock_4",
-    name: "Sauna & Bath Phú Nhuận",
-    address: "Phan Xích Long, Phú Nhuận",
-    latitude: 10.7981,
-    longitude: 106.6852,
-    price: 50000,
-    rating: 5.0,
-    ratingCount: 210,
-    amenities: [
-      "hot_water",
-      "sauna",
-      "massage",
-      "locker",
-      "parking",
-      "wifi",
-      "accessible",
-    ],
-    status: "approved",
-    image: "https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=600",
-  },
-  {
-    id: "mock_5",
-    name: "WC & Shower Kênh Nhiêu Lộc",
-    address: "Hoàng Sa, Quận 3",
-    latitude: 10.7885,
-    longitude: 106.6789,
-    price: 0,
-    rating: 3.5,
-    ratingCount: 45,
-    amenities: ["parking"],
-    status: "approved",
-    image: "https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?w=600",
-  },
-  {
-    id: "mock_6",
-    name: "Nhà Tắm Bến Xe Miền Đông",
-    address: "Đinh Bộ Lĩnh, Bình Thạnh",
-    latitude: 10.8153,
-    longitude: 106.7077,
-    price: 20000,
-    rating: 3.8,
-    ratingCount: 302,
-    amenities: ["hot_water", "locker", "shop", "charge"],
-    status: "approved",
-    image: "https://images.unsplash.com/photo-1620626011761-996317b8d101?w=600",
-  },
-  {
-    id: "mock_7",
-    name: "Luxury Bath Thảo Điền",
-    address: "Xuân Thủy, Thảo Điền",
-    latitude: 10.8064,
-    longitude: 106.7324,
-    price: 100000,
-    rating: 4.9,
-    ratingCount: 88,
-    amenities: [
-      "hot_water",
-      "sauna",
-      "massage",
-      "locker",
-      "parking",
-      "wifi",
-      "laundry",
-    ],
-    status: "approved",
-    image: "https://images.unsplash.com/photo-1560185007-cde436f6a4d0?w=600",
-  },
-  {
-    id: "mock_8",
-    name: "Trạm Tắm Sân Bay",
-    address: "Trường Sơn, Tân Bình",
-    latitude: 10.8123,
-    longitude: 106.6631,
-    price: 45000,
-    rating: 4.5,
-    ratingCount: 150,
-    amenities: ["hot_water", "locker", "charge", "wifi"],
-    status: "approved",
-    image: "https://images.unsplash.com/photo-1507652313519-d4e9174996dd?w=600",
-  },
-];
+// ❌ ĐÃ XÓA HOÀN TOÀN MOCK_BATHHOUSES
 
 // Hàm tính khoảng cách
 const getDistance = (
@@ -183,11 +60,9 @@ export default function UserMap() {
   const [displayedToilets, setDisplayedToilets] = useState<any[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedWC, setSelectedWC] = useState<any>(null);
-  // 👉 Đổi sang mảng để chọn nhiều
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
-  const [userLocation, setUserLocation] = useState<any>(null); // Lưu vị trí user
+  const [userLocation, setUserLocation] = useState<any>(null);
 
-  // 👉 State cho tìm kiếm
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
 
@@ -212,6 +87,7 @@ export default function UserMap() {
 
   const fetchToilets = async () => {
     try {
+      // Chỉ lấy những địa điểm đã được duyệt (approved)
       const q = query(
         collection(db, "toilets"),
         where("status", "==", "approved")
@@ -219,19 +95,37 @@ export default function UserMap() {
       const querySnapshot = await getDocs(q);
       const list: any[] = [];
 
-      // Lấy dữ liệu thật từ Firebase
-      querySnapshot.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        
+        // 🛠️ MÍT FIX: Logic lấy tọa độ thông minh
+        // Ưu tiên lấy trong object 'location' (cấu trúc mới)
+        // Nếu không có thì tìm 'latitude'/'longitude' (cấu trúc cũ)
+        let lat = data.latitude;
+        let lng = data.longitude;
 
-      // Gộp thêm dữ liệu giả (Mock Data)
-      const combinedList = [...list, ...MOCK_BATHHOUSES];
+        if (data.location && typeof data.location.latitude === 'number') {
+             lat = data.location.latitude;
+             lng = data.location.longitude;
+        }
 
-      setAllToilets(combinedList);
-      setDisplayedToilets(combinedList);
+        // Chỉ thêm vào list nếu có tọa độ hợp lệ
+        if (lat && lng) {
+            list.push({ 
+                id: doc.id, 
+                ...data,
+                latitude: lat, // Chuẩn hóa về latitude
+                longitude: lng // Chuẩn hóa về longitude
+            });
+        }
+      });
+
+      setAllToilets(list);
+      setDisplayedToilets(list);
     } catch (error) {
-      console.log(error);
-      // Nếu lỗi mạng, vẫn hiện mock data
-      setAllToilets(MOCK_BATHHOUSES);
-      setDisplayedToilets(MOCK_BATHHOUSES);
+      console.log("Lỗi tải dữ liệu:", error);
+      setAllToilets([]);
+      setDisplayedToilets([]);
     }
   };
 
@@ -275,13 +169,11 @@ export default function UserMap() {
             item.longitude
           ),
         }))
-        .sort((a, b) => a.distance - b.distance); // Sắp xếp gần nhất trước
+        .sort((a, b) => a.distance - b.distance);
     }
 
-    // Cập nhật hiển thị map
     setDisplayedToilets(filtered);
 
-    // Cập nhật kết quả tìm kiếm dropdown (chỉ khi đang gõ)
     if (text.trim()) {
       setSearchResults(filtered);
     } else {
@@ -289,7 +181,6 @@ export default function UserMap() {
     }
   };
 
-  // Xử lý khi bấm nút Filter
   const handleFilter = (filterId: string) => {
     let newFilters = [...activeFilters];
 
@@ -304,16 +195,14 @@ export default function UserMap() {
     }
 
     setActiveFilters(newFilters);
-    applyCombinedFilters(searchQuery, newFilters); // Gọi hàm lọc kết hợp
+    applyCombinedFilters(searchQuery, newFilters);
   };
 
-  // Xử lý khi nhập text tìm kiếm
   const handleSearch = (text: string) => {
     setSearchQuery(text);
-    applyCombinedFilters(text, activeFilters); // Gọi hàm lọc kết hợp
+    applyCombinedFilters(text, activeFilters);
   };
 
-  // 👉 Chọn kết quả tìm kiếm
   const onSelectSearchResult = (wc: any) => {
     setSearchQuery("");
     setSearchResults([]);
@@ -354,11 +243,10 @@ export default function UserMap() {
           <Marker
             key={wc.id}
             coordinate={{
-              latitude: wc.latitude || 10,
-              longitude: wc.longitude || 106,
+              latitude: wc.latitude,
+              longitude: wc.longitude,
             }}
             title={wc.name}
-            // Logic màu pin: Free = Xanh lá, Có phí = Xanh dương
             pinColor={wc.price === 0 ? "#4CAF50" : "#039BE5"}
             onCalloutPress={() => {
               setSelectedWC(wc);
@@ -377,7 +265,7 @@ export default function UserMap() {
             style={{ marginRight: 10 }}
           />
           <TextInput
-            placeholder="Tìm nhà tắm, spa, phòng thay đồ..."
+            placeholder="Tìm nhà tắm, spa..."
             style={styles.input}
             value={searchQuery}
             onChangeText={handleSearch}
@@ -396,7 +284,7 @@ export default function UserMap() {
         </TouchableOpacity>
       </View>
 
-      {/* 👉 DANH SÁCH KẾT QUẢ TÌM KIẾM (Dropdown có Distance) */}
+      {/* Kết quả tìm kiếm */}
       {searchResults.length > 0 && (
         <View style={styles.searchResultsContainer}>
           <ScrollView
@@ -436,7 +324,6 @@ export default function UserMap() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}
         >
-          {/* Nút Tất cả */}
           <TouchableOpacity
             style={[
               styles.filterChip,
@@ -459,7 +346,6 @@ export default function UserMap() {
             </Text>
           </TouchableOpacity>
 
-          {/* Các nút filter khác */}
           {FILTERS.map((f) => {
             const isActive = activeFilters.includes(f.id);
             return (
@@ -543,10 +429,9 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
 
-  // Style cho kết quả tìm kiếm (Dropdown)
   searchResultsContainer: {
     position: "absolute",
-    top: 105, // Ngay dưới thanh search
+    top: 105,
     left: 20,
     right: 20,
     backgroundColor: "white",
@@ -556,7 +441,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    zIndex: 20, // Đè lên filter
+    zIndex: 20,
     overflow: "hidden",
   },
   resultItem: {

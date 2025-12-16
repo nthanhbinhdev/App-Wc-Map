@@ -1,40 +1,57 @@
 // components/ui/UserAccountComponent.tsx
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { updateProfile } from "firebase/auth";
+// Gom nhóm import Firebase Auth
 import {
-    collection,
-    deleteDoc,
-    doc,
-    getDoc,
-    getDocs,
-    query,
-    setDoc,
-    where,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword,
+  updateProfile,
+} from "firebase/auth";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  setDoc,
+  where,
 } from "firebase/firestore";
+// Import Firebase Storage
+import {
+  getDownloadURL,
+  getStorage,
+  ref,
+  uploadBytesResumable,
+} from "firebase/storage";
 import React, { useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Image, // 👉 Đã thêm lại Image
-    Modal, // 👉 Đã thêm lại Modal
-    Platform,
-    RefreshControl,
-    SafeAreaView,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  Modal,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
+// ✅ Dùng SafeAreaView từ thư viện chuẩn này để fix Warning deprecated
+import { SafeAreaView } from "react-native-safe-area-context";
 import { auth, db } from "../../../firebaseConfig";
 import ToiletDetailModal from "../../ToiletDetailModal";
+// 👉 Import Hook Theme
+import { useTheme } from "../../../contexts/ThemeContext";
 
-// 👉 Import 4 component con
+// Import các component con
 import MyBookings from "../MyBookings";
 import ActiveBookingCard from "./ActiveBookingCard";
+import ChangePasswordModal from "./ChangePasswordModal";
 import EditProfileModal from "./EditProfileModal";
 import ProfileHeader from "./ProfileHeader";
 import SettingsModal from "./SettingsModal";
@@ -42,6 +59,9 @@ import SettingsModal from "./SettingsModal";
 export default function UserAccountComponent() {
   const router = useRouter();
   const user = auth.currentUser;
+
+  // 👉 1. Lấy theme từ Context
+  const { theme, isDarkMode } = useTheme();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -56,6 +76,8 @@ export default function UserAccountComponent() {
   // Modal states
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
+  const [changePassModalVisible, setChangePassModalVisible] = useState(false);
+
   const [newName, setNewName] = useState(user?.displayName || "");
   const [newPhotoURL, setNewPhotoURL] = useState(user?.photoURL || "");
   const [newPhone, setNewPhone] = useState("");
@@ -105,7 +127,6 @@ export default function UserAccountComponent() {
         snapRev.docs.map(async (d) => {
           const reviewData = d.data();
           let finalName = reviewData.toiletName;
-
           if (!finalName && reviewData.toiletId) {
             try {
               const toiletDoc = await getDoc(
@@ -118,7 +139,6 @@ export default function UserAccountComponent() {
               console.log("Không lấy được tên toilet:", err);
             }
           }
-
           return {
             id: d.id,
             ...reviewData,
@@ -144,13 +164,11 @@ export default function UserAccountComponent() {
 
   const fetchActiveBooking = async () => {
     if (!user) return;
-
     const q = query(
       collection(db, "bookings"),
       where("userId", "==", user.uid),
       where("status", "in", ["pending", "checked_in"])
     );
-
     try {
       const snap = await getDocs(q);
       if (!snap.empty) {
@@ -171,7 +189,6 @@ export default function UserAccountComponent() {
 
   const processedReviews = useMemo(() => {
     let list = [...reviews];
-
     if (activeFilters.includes("filter_5star")) {
       list = list.filter((item) => (Number(item.rating) || 0) >= 5);
     }
@@ -180,7 +197,6 @@ export default function UserAccountComponent() {
         (item) => item.comment && item.comment.trim().length > 0
       );
     }
-
     if (activeSort === "sort_oldest") {
       list.sort(
         (a, b) =>
@@ -192,7 +208,6 @@ export default function UserAccountComponent() {
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
     }
-
     return list;
   }, [reviews, activeSort, activeFilters]);
 
@@ -215,36 +230,128 @@ export default function UserAccountComponent() {
     fetchUserData();
   };
 
-  const handleUpdateProfile = async () => {
+  // 🔥 HÀM UPLOAD "BẤT TỬ" LÊN FIREBASE STORAGE
+  const uploadImageToFirebase = async (uri: string) => {
+    try {
+      console.log("🚀 Đang chuẩn bị upload:", uri);
+
+      const blob: any = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.onload = function () {
+          resolve(xhr.response);
+        };
+        xhr.onerror = function (e) {
+          console.log("XHR Error:", e);
+          reject(new TypeError("Network request failed"));
+        };
+        xhr.responseType = "blob";
+        xhr.open("GET", uri, true);
+        xhr.send(null);
+      });
+
+      const storage = getStorage();
+      const filename = `avatars/${user?.uid}_${Date.now()}.jpg`;
+      const storageRef = ref(storage, filename);
+
+      console.log("📤 Đang đẩy Blob lên Storage...");
+      const uploadTask = uploadBytesResumable(storageRef, blob);
+
+      return new Promise<string>((resolve, reject) => {
+        uploadTask.on(
+          "state_changed",
+          (snapshot) => {
+            const progress =
+              (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            console.log("Upload is " + progress + "% done");
+          },
+          (error) => {
+            console.error("Upload thất bại:", error);
+            blob.close(); // Giải phóng bộ nhớ
+            reject(error);
+          },
+          async () => {
+            // Upload thành công -> Lấy URL
+            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+            console.log("🎉 Upload thành công! URL:", downloadURL);
+            blob.close(); // Giải phóng bộ nhớ
+            resolve(downloadURL);
+          }
+        );
+      });
+    } catch (error: any) {
+      console.error("🔥 Lỗi trong quá trình upload:", error);
+      throw error;
+    }
+  };
+
+  const handleUpdateProfile = async (
+    nameInput: string,
+    photoURLInput: string,
+    phoneInput: string,
+    imageUri: string | null
+  ) => {
     if (!user) return;
 
-    if (!newName.trim()) {
+    if (!nameInput.trim()) {
       Alert.alert("Lỗi", "Tên hiển thị không được để trống!");
       return;
     }
 
     try {
+      let finalPhotoURL = photoURLInput;
+
+      if (imageUri) {
+        finalPhotoURL = await uploadImageToFirebase(imageUri);
+      }
+
       await updateProfile(user, {
-        displayName: newName.trim(),
-        photoURL: newPhotoURL.trim() || null,
+        displayName: nameInput.trim(),
+        photoURL: finalPhotoURL || null,
       });
 
       const userRef = doc(db, "users", user.uid);
       await setDoc(
         userRef,
         {
-          phoneNumber: newPhone.trim(),
+          phoneNumber: phoneInput.trim(),
+          photoURL: finalPhotoURL || null,
+          displayName: nameInput.trim(),
           updatedAt: new Date().toISOString(),
+          email: user.email,
         },
         { merge: true }
       );
+
+      setNewPhotoURL(finalPhotoURL);
+      setNewName(nameInput);
+      setNewPhone(phoneInput);
 
       Alert.alert("✅ Thành công", "Hồ sơ đã được cập nhật!");
       setEditModalVisible(false);
       router.replace("/(tabs)/account");
     } catch (error: any) {
       console.error("Update profile error:", error);
-      Alert.alert("❌ Lỗi", error.message);
+      Alert.alert("❌ Lỗi cập nhật", error.message);
+    }
+  };
+
+  const handleChangePassword = async (currentPass: string, newPass: string) => {
+    if (!user || !user.email) return;
+    try {
+      const credential = EmailAuthProvider.credential(user.email, currentPass);
+      await reauthenticateWithCredential(user, credential);
+      await updatePassword(user, newPass);
+      Alert.alert("✅ Thành công", "Mật khẩu đã được thay đổi!");
+      setChangePassModalVisible(false);
+    } catch (error: any) {
+      console.error("Change pass error:", error);
+      if (
+        error.code === "auth/invalid-credential" ||
+        error.code === "auth/wrong-password"
+      ) {
+        throw new Error("Mật khẩu hiện tại không đúng.");
+      }
+      throw new Error("Có lỗi xảy ra, vui lòng thử lại sau.");
     }
   };
 
@@ -273,9 +380,9 @@ export default function UserAccountComponent() {
               ...prev,
               count: Math.max(0, prev.count - 1),
             }));
-            Alert.alert("✅ Đã xóa", "Đánh giá đã được xóa");
+            Alert.alert("Đã xóa", "Đánh giá đã được xóa");
           } catch (error: any) {
-            Alert.alert("❌ Lỗi", error.message);
+            Alert.alert("Lỗi", error.message);
           }
         },
       },
@@ -284,11 +391,9 @@ export default function UserAccountComponent() {
 
   const handleRevisit = async (item: any) => {
     if (!item.toiletId) return;
-
     try {
       const docRef = doc(db, "toilets", item.toiletId);
       const docSnap = await getDoc(docRef);
-
       if (docSnap.exists()) {
         setSelectedToilet({ id: docSnap.id, ...docSnap.data() });
         setDetailModalVisible(true);
@@ -300,18 +405,34 @@ export default function UserAccountComponent() {
     }
   };
 
+  // Render Review Item với màu động
   const renderReviewItem = ({ item }: { item: any }) => (
     <TouchableOpacity
-      style={styles.card}
+      style={[
+        styles.card,
+        {
+          backgroundColor: theme.card, // Đổi màu nền card
+          borderColor: theme.border,
+          shadowColor: isDarkMode ? "#000" : "#000",
+        },
+      ]}
       activeOpacity={0.7}
       onPress={() => handleRevisit(item)}
     >
-      <View style={[styles.iconSquare, { backgroundColor: "#FFF8E1" }]}>
+      <View
+        style={[
+          styles.iconSquare,
+          { backgroundColor: isDarkMode ? "#332C00" : "#FFF8E1" },
+        ]}
+      >
         <Ionicons name="star" size={24} color="#FBC02D" />
       </View>
       <View style={{ flex: 1 }}>
         <View style={styles.rowBetween}>
-          <Text style={styles.cardTitle} numberOfLines={1}>
+          <Text
+            style={[styles.cardTitle, { color: theme.text }]}
+            numberOfLines={1}
+          >
             {item.toiletName}
           </Text>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -321,9 +442,9 @@ export default function UserAccountComponent() {
             <TouchableOpacity
               onPress={() => handleDeleteReview(item.id)}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              style={styles.deleteBtn}
+              style={[styles.deleteBtn, { backgroundColor: theme.iconBg }]}
             >
-              <Ionicons name="trash-outline" size={16} color="#FF5252" />
+              <Ionicons name="trash-outline" size={16} color={theme.danger} />
             </TouchableOpacity>
           </View>
         </View>
@@ -344,14 +465,21 @@ export default function UserAccountComponent() {
               ))}
             </View>
           </View>
-          <View style={styles.revisitBadge}>
-            <Text style={styles.revisitText}>Quay lại</Text>
-            <Ionicons name="arrow-forward" size={10} color="#2196F3" />
+          <View
+            style={[styles.revisitBadge, { backgroundColor: theme.iconBg }]}
+          >
+            <Text style={[styles.revisitText, { color: theme.primary }]}>
+              Quay lại
+            </Text>
+            <Ionicons name="arrow-forward" size={10} color={theme.primary} />
           </View>
         </View>
 
         {item.comment && (
-          <Text style={styles.cardSub} numberOfLines={2}>
+          <Text
+            style={[styles.cardSub, { color: theme.subText }]}
+            numberOfLines={2}
+          >
             "{item.comment}"
           </Text>
         )}
@@ -361,15 +489,25 @@ export default function UserAccountComponent() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: "center" }]}>
+      <View
+        style={[
+          styles.container,
+          { justifyContent: "center", backgroundColor: theme.background },
+        ]}
+      >
         <ActivityIndicator size="large" color="#2196F3" />
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: theme.background }]}
+    >
+      <StatusBar
+        barStyle={isDarkMode ? "light-content" : "dark-content"}
+        backgroundColor={theme.background}
+      />
 
       <FlatList
         data={processedReviews}
@@ -381,6 +519,7 @@ export default function UserAccountComponent() {
             refreshing={refreshing}
             onRefresh={onRefresh}
             colors={["#2196F3"]}
+            tintColor={theme.text}
           />
         }
         ListHeaderComponent={
@@ -395,6 +534,7 @@ export default function UserAccountComponent() {
               }}
               onOpenSettings={() => setSettingsModalVisible(true)}
               onLogout={handleLogout}
+              onChangePassword={() => setChangePassModalVisible(true)}
             />
 
             <ActiveBookingCard
@@ -404,7 +544,9 @@ export default function UserAccountComponent() {
 
             {/* Section Header */}
             <View style={styles.listHeaderContainer}>
-              <Text style={styles.sectionHeaderTitle}>Lịch sử trải nghiệm</Text>
+              <Text style={[styles.sectionHeaderTitle, { color: theme.text }]}>
+                Lịch sử trải nghiệm
+              </Text>
               <TouchableOpacity onPress={() => setShowMyBookings(true)}>
                 <Text style={styles.linkText}>Quản lý đặt chỗ</Text>
               </TouchableOpacity>
@@ -421,7 +563,12 @@ export default function UserAccountComponent() {
                       key={f.id}
                       style={[
                         styles.filterChip,
-                        isActive && styles.filterChipActive,
+                        {
+                          backgroundColor: isActive
+                            ? theme.primary
+                            : theme.card,
+                          borderColor: isActive ? theme.primary : theme.border,
+                        },
                       ]}
                       onPress={() => handleToggleFilter(f.id, f.type)}
                     >
@@ -436,7 +583,7 @@ export default function UserAccountComponent() {
                       <Text
                         style={[
                           styles.filterText,
-                          isActive && styles.filterTextActive,
+                          { color: isActive ? "white" : theme.subText },
                         ]}
                       >
                         {f.label}
@@ -459,9 +606,12 @@ export default function UserAccountComponent() {
                 height: 100,
                 opacity: 0.5,
                 marginBottom: 15,
+                tintColor: isDarkMode ? "#555" : undefined,
               }}
             />
-            <Text style={styles.emptyText}>Chưa có trải nghiệm nào</Text>
+            <Text style={[styles.emptyText, { color: theme.text }]}>
+              Chưa có trải nghiệm nào
+            </Text>
             <Text style={styles.emptySubText}>
               Không tìm thấy đánh giá nào khớp với bộ lọc...
             </Text>
@@ -514,22 +664,34 @@ export default function UserAccountComponent() {
         animationType="slide"
         onRequestClose={() => setShowMyBookings(false)}
       >
-        <View style={{ flex: 1, backgroundColor: "#F8F9FA" }}>
-          <View style={styles.modalHeader}>
+        <View style={{ flex: 1, backgroundColor: theme.background }}>
+          <View
+            style={[
+              styles.modalHeader,
+              { backgroundColor: theme.card, borderBottomColor: theme.border },
+            ]}
+          >
             <TouchableOpacity
               onPress={() => setShowMyBookings(false)}
-              style={styles.modalCloseBtn}
+              style={[styles.modalCloseBtn, { backgroundColor: theme.iconBg }]}
             >
-              <Ionicons name="close" size={24} color="#333" />
+              <Ionicons name="close" size={24} color={theme.text} />
             </TouchableOpacity>
-            <Text style={styles.modalHeaderTitle}>Quản lý đặt chỗ</Text>
+            <Text style={[styles.modalHeaderTitle, { color: theme.text }]}>
+              Quản lý đặt chỗ
+            </Text>
             <View style={{ width: 40 }} />
           </View>
           <MyBookings />
         </View>
       </Modal>
 
-      {/* Toilet Detail Modal */}
+      <ChangePasswordModal
+        visible={changePassModalVisible}
+        onClose={() => setChangePassModalVisible(false)}
+        onSave={handleChangePassword}
+      />
+
       <ToiletDetailModal
         visible={detailModalVisible}
         toilet={selectedToilet}
@@ -540,8 +702,8 @@ export default function UserAccountComponent() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8F9FA" },
-  sectionHeaderTitle: { fontSize: 18, fontWeight: "800", color: "#1A1A1A" },
+  container: { flex: 1 },
+  sectionHeaderTitle: { fontSize: 18, fontWeight: "800" },
   listHeaderContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -557,30 +719,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: "white",
     marginRight: 8,
     borderWidth: 1,
-    borderColor: "#E0E0E0",
   },
-  filterChipActive: {
-    backgroundColor: "#2196F3",
-    borderColor: "#2196F3",
-  },
-  filterText: { fontSize: 13, fontWeight: "600", color: "#555" },
-  filterTextActive: { color: "white" },
+  filterText: { fontSize: 13, fontWeight: "600" },
   card: {
     flexDirection: "row",
     marginHorizontal: 20,
     marginBottom: 12,
     padding: 12,
-    backgroundColor: "white",
     borderRadius: 16,
     elevation: 2,
-    shadowColor: "#000",
     shadowOpacity: 0.05,
     shadowRadius: 4,
     borderWidth: 1,
-    borderColor: "#F0F0F0",
   },
   iconSquare: {
     width: 50,
@@ -593,22 +745,19 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontWeight: "700",
     fontSize: 15,
-    color: "#202124",
     marginBottom: 4,
     flex: 1,
   },
   cardSub: {
-    color: "#5F6368",
     fontSize: 13,
     marginTop: 6,
     fontStyle: "italic",
   },
   dateText: { fontSize: 12, color: "#999" },
-  deleteBtn: { padding: 4, backgroundColor: "#FFEBEE", borderRadius: 6 },
+  deleteBtn: { padding: 4, borderRadius: 6 },
   revisitBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#E3F2FD",
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
@@ -620,7 +769,7 @@ const styles = StyleSheet.create({
     marginTop: 40,
     paddingHorizontal: 40,
   },
-  emptyText: { marginTop: 10, color: "#333", fontSize: 16, fontWeight: "700" },
+  emptyText: { marginTop: 10, fontSize: 16, fontWeight: "700" },
   emptySubText: {
     marginTop: 5,
     color: "#999",
@@ -641,17 +790,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 16,
     paddingTop: Platform.OS === "android" ? 40 : 20,
-    backgroundColor: "white",
     borderBottomWidth: 1,
-    borderBottomColor: "#EEE",
   },
-  modalCloseBtn: { padding: 8, borderRadius: 20, backgroundColor: "#F5F5F5" },
+  modalCloseBtn: { padding: 8, borderRadius: 20 },
   modalHeaderTitle: {
     fontSize: 18,
     fontWeight: "800",
     flex: 1,
     textAlign: "center",
-    color: "#333",
   },
   rowBetween: {
     flexDirection: "row",
