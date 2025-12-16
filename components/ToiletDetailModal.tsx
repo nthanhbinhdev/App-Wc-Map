@@ -114,7 +114,7 @@ export default function ToiletDetailModal({ visible, toilet, onClose }: any) {
       await addDoc(collection(db, "reviews"), {
         toiletId: toilet.id,
         userId: auth.currentUser?.uid || "anonymous",
-        userName: userProfile?.fullName || "Khách ẩn danh",
+        userName: auth.currentUser?.displayName ?? "Khách ẩn danh",
         rating,
         comment,
         tags: selectedTags,
