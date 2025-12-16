@@ -168,7 +168,7 @@ export default function LoginScreen() {
   if (isRegisterMode) {
     return (
       <ScrollView contentContainerStyle={styles.container}>
-        <Text style={{ fontSize: 80, marginBottom: 20 }}>🚽</Text>
+        <Text style={{ fontSize: 80, marginBottom: 20 }}>:)</Text>
         <Text style={styles.title}>ĐĂNG KÝ TÀI KHOẢN</Text>
 
         <TextInput
@@ -230,7 +230,7 @@ export default function LoginScreen() {
   return (
     <View style={styles.container}>
       <Text style={{ fontSize: 80, marginBottom: 20 }}>:)</Text>
-      <Text style={styles.title}>BATHHOUSES SÀI GÒN</Text>
+      <Text style={styles.title}>NHÀ TẮM CÔNG CỘNG</Text>
 
       <TextInput
         style={styles.input}

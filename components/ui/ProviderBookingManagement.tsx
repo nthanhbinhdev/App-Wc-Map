@@ -33,7 +33,7 @@ interface Booking {
   expiryTime: string;
   status: string;
   qrCode: string;
-  totalPrice: number;
+  price: number;
   notes?: string;
   bookingTime: string;
   toiletId: string;
@@ -145,7 +145,7 @@ export default function ProviderBookingManagement() {
               expiryTime: data.expiryTime,
               status: data.status,
               qrCode: data.qrCode,
-              totalPrice: data.totalPrice,
+              price: data.price,
               notes: data.notes || data.note, // 👉 Fallback note
               // 👉 QUAN TRỌNG: Fix lỗi crash Date do lệch tên (createdAt vs bookingTime)
               bookingTime:
@@ -398,7 +398,7 @@ export default function ProviderBookingManagement() {
         <View style={styles.infoRow}>
           <Ionicons name="cash" size={14} color="#666" />
           <Text style={styles.infoText}>
-            {item.totalPrice ? item.totalPrice.toLocaleString() : "0"}đ
+            {item.price ? item.price.toLocaleString() : "0"}đ
           </Text>
         </View>
       </View>
@@ -638,7 +638,7 @@ export default function ProviderBookingManagement() {
                       { color: "#4CAF50", fontWeight: "bold" },
                     ]}
                   >
-                    {selectedBooking.totalPrice?.toLocaleString()}đ
+                    {selectedBooking.price?.toLocaleString()}đ
                   </Text>
                 </View>
                 <View style={styles.detailRow}>
