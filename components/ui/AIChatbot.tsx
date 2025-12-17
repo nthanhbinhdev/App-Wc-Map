@@ -42,7 +42,7 @@ export default function AIChatbot() {
   // 👉 HÀM GỌI GEMINI API
   const generateAIResponse = async (userMessage: string): Promise<string> => {
     try {
-      const apiKey = "AIzaSyA60CwNy8QLxgYXOzZrRGeGMiX_trHez1w"; // API Key sẽ được môi trường tự động điền (hoặc ông điền key của ông vào đây)
+      const apiKey = "AIzaSyCUCHN38l9x1SvJq1mpXGv7zpQNn8-3uCQ"; // API Key sẽ được môi trường tự động điền (hoặc ông điền key của ông vào đây)
       const systemPrompt = `Bạn là trợ lý AI của ứng dụng WC Map SG - ứng dụng tìm kiếm nhà vệ sinh công cộng tại Sài Gòn.
       
 Nhiệm vụ của bạn:

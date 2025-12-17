@@ -73,14 +73,14 @@ export default function ToiletDetailModal({ visible, toilet, onClose }: any) {
     "Nhân viên thân thiện",
   ];
 
-  // ✅ FIX: Di chuyển useMemo lên TOP LEVEL (trước early return)
+
   const displayImage = useMemo(() => {
     if (toilet?.images?.length > 0) return toilet.images[0];
     if (toilet?.image) return toilet.image;
-    return "https://via.placeholder.com/400?text=No+Image";
+  return require('../assets/images/nha-tam-dep-23.jpg');
   }, [toilet]);
 
-  // ✅ FIX: Cleanup listener cũ trước khi tạo mới
+
   useEffect(() => {
     if (!visible || !auth.currentUser) {
       // Cleanup khi modal đóng
@@ -242,7 +242,7 @@ export default function ToiletDetailModal({ visible, toilet, onClose }: any) {
 
         <ScrollView contentContainerStyle={styles.content}>
           <Image
-            source={{ uri: displayImage }}
+            source={displayImage}
             style={styles.image} // ✅ FIX: Add missing style
             onError={(e) =>
               console.log("Image failed to load:", e.nativeEvent.error)
