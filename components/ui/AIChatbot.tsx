@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: "#2196F3",
-    paddingTop: Platform.OS === "ios" ? 50 : 20, // Fix status bar padding
+    paddingTop: Platform.OS === "ios" ? 50 : 40, // Fix status bar padding
     paddingBottom: 15,
     paddingHorizontal: 20,
     borderBottomLeftRadius: 20,
@@ -266,6 +266,7 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
   },
   headerContent: {
+
     flexDirection: "row",
     alignItems: "center",
     gap: 12,

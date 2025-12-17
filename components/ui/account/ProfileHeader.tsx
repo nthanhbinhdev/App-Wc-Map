@@ -65,7 +65,7 @@ export default function ProfileHeader({
           >
             <Ionicons name="person" size={12} color={theme.primary} />
             <Text style={[styles.roleText, { color: theme.primary }]}>
-              Thành viên thân thiết
+              Thành viên thân thiện
             </Text>
           </View>
         </View>
@@ -159,14 +159,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     // Logic tính padding top giữ nguyên cho Android
     paddingTop:
-      Platform.OS === "android" ? (StatusBar.currentHeight || 24) + 20 : 20,
+      Platform.OS === "android" ? (StatusBar.currentHeight || 24) : 20,
     paddingBottom: 20,
     marginBottom: 10,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    borderBottomLeftRadius: 4,
+    borderBottomRightRadius: 4,
     elevation: 4,
     shadowOpacity: 0.05,
     shadowRadius: 10,
+    
   },
   userInfoRow: { flexDirection: "row", alignItems: "center", marginBottom: 20 },
   avatarLarge: {
@@ -174,20 +175,20 @@ const styles = StyleSheet.create({
     height: 70,
     borderRadius: 35,
     marginRight: 15,
-    borderWidth: 2,
-    borderColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#f5f5f5",
   },
-  nameLarge: { fontSize: 22, fontWeight: "800", marginBottom: 4 },
-  emailLabel: { fontSize: 13, marginBottom: 6 },
+  nameLarge: { fontSize: 28, fontWeight: "800", marginBottom: 0 },
+  emailLabel: { fontSize: 13, marginBottom: 6, paddingLeft: 2 },
   roleBadge: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 10,
+    paddingHorizontal: 2,
     paddingVertical: 5,
     borderRadius: 12,
     alignSelf: "flex-start",
   },
-  roleText: { fontWeight: "700", fontSize: 11, marginLeft: 4 },
+  roleText: { fontWeight: "700", fontSize: 13, marginLeft: 0 },
   editIconBtn: { padding: 10, borderRadius: 50 },
   statsContainer: {
     flexDirection: "row",
