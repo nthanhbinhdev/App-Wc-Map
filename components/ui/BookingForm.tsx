@@ -58,11 +58,11 @@ export default function BookingForm({
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // 👉 QUAN TRỌNG: Đồng bộ lại state khi props thay đổi (fix lỗi không tự điền tên)
+  // Đồng bộ lại state khi props thay đổi (fix lỗi không tự điền tên)
   useEffect(() => {
     if (visible) {
-      if (initialName) setGuestName(initialName);
-      if (initialPhone) setGuestPhone(initialPhone);
+      setGuestName(initialName || "");
+      setGuestPhone(initialPhone || "");
       setArrivalTime(isWalkIn ? 0 : 15);
     }
   }, [visible, initialName, initialPhone, isWalkIn]);
@@ -74,7 +74,6 @@ export default function BookingForm({
     const fetchRooms = async () => {
       setLoading(true);
       try {
-        // 👉 SỬA LỖI: Đổi 'storeId' thành 'toiletId' để khớp với database
         const q = query(
           collection(db, "rooms"),
           where("toiletId", "==", toilet.id),
@@ -151,7 +150,7 @@ export default function BookingForm({
         ? `Bạn đã check-in vào phòng ${selectedRoom.roomNumber}.`
         : `Bạn đã đặt phòng ${selectedRoom.roomNumber}. Vui lòng đến trong vòng ${arrivalTime} phút nữa.`;
 
-      Alert.alert("✅ " + successTitle, successMsg, [
+      Alert.alert(" " + successTitle, successMsg, [
         { text: "OK", onPress: onClose },
       ]);
     } catch (error: any) {
@@ -231,7 +230,7 @@ export default function BookingForm({
             <Text style={styles.sectionTitle}>2. Thông Tin Của Bạn</Text>
             <TextInput
               style={styles.input}
-              placeholder="Tên của bạn (VD: Bình)"
+              placeholder="Tên của bạn"
               value={guestName}
               onChangeText={setGuestName}
             />

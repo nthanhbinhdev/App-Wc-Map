@@ -70,7 +70,8 @@ export default function ProviderDashboard() {
   const user = auth.currentUser;
 
   const mapRef = useRef<MapView>(null);
-  // FIX: Dùng useRef để quản lý listener, tránh memory leak khi re-render
+  
+  
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -143,7 +144,7 @@ export default function ProviderDashboard() {
       unsubscribeRef.current();
       unsubscribeRef.current = null;
     }
-
+ 
     try {
       if (!refreshing) setLoading(true);
 

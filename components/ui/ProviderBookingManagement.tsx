@@ -56,7 +56,7 @@ export default function ProviderBookingManagement() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
-  // 👉 Fix: Lắng nghe auth state để đảm bảo user không bị null lúc mới vào app
+  //Lắng nghe auth state để đảm bảo user không bị null lúc mới vào app
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
       setCurrentUser(user);

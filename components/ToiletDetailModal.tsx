@@ -10,7 +10,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Image,
@@ -50,16 +50,20 @@ export default function ToiletDetailModal({ visible, toilet, onClose }: any) {
   const [showBooking, setShowBooking] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
 
-  // 👉 THÊM state user profile để điền form cho nhanh
+  // THÊM state user profile để điền form cho nhanh
   const [userProfile, setUserProfile] = useState<any>(null);
 
-  // 👉 THÊM state xác định có phải Walk-in từ Scanner hay không
+  // THÊM state xác định có phải Walk-in từ Scanner hay không
   const [isWalkInMode, setIsWalkInMode] = useState(false);
 
   // Review states
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+
+  // ✅ FIX: Dùng ref để track listeners
+  const userListenerRef = useRef<(() => void) | null>(null);
+  const reviewsListenerRef = useRef<(() => void) | null>(null);
 
   const REVIEW_TAGS = [
     "Sạch sẽ",
@@ -69,33 +73,94 @@ export default function ToiletDetailModal({ visible, toilet, onClose }: any) {
     "Nhân viên thân thiện",
   ];
 
-  // 1. Lấy thông tin user hiện tại (để điền sẵn vào form booking)
-  useEffect(() => {
-    if (auth.currentUser) {
-      const userRef = doc(db, "users", auth.currentUser.uid);
-      const unsub = onSnapshot(userRef, (docSnap) => {
-        if (docSnap.exists()) {
-          setUserProfile(docSnap.data());
-        }
-      });
-      return () => unsub();
-    }
-  }, []);
-
-  // 2. Load Reviews Realtime
-  useEffect(() => {
-    if (toilet?.id) {
-      const q = query(
-        collection(db, "reviews"),
-        where("toiletId", "==", toilet.id),
-        orderBy("createdAt", "desc")
-      );
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        setReviews(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
-      });
-      return () => unsubscribe();
-    }
+  // ✅ FIX: Di chuyển useMemo lên TOP LEVEL (trước early return)
+  const displayImage = useMemo(() => {
+    if (toilet?.images?.length > 0) return toilet.images[0];
+    if (toilet?.image) return toilet.image;
+    return "https://via.placeholder.com/400?text=No+Image";
   }, [toilet]);
+
+  // ✅ FIX: Cleanup listener cũ trước khi tạo mới
+  useEffect(() => {
+    if (!visible || !auth.currentUser) {
+      // Cleanup khi modal đóng
+      if (userListenerRef.current) {
+        userListenerRef.current();
+        userListenerRef.current = null;
+      }
+      return;
+    }
+
+    // Hủy listener cũ (nếu có)
+    if (userListenerRef.current) {
+      userListenerRef.current();
+    }
+
+    const userRef = doc(db, "users", auth.currentUser.uid);
+    const unsub = onSnapshot(userRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setUserProfile(docSnap.data());
+      }
+    });
+
+    userListenerRef.current = unsub;
+
+    return () => {
+      if (userListenerRef.current) {
+        userListenerRef.current();
+        userListenerRef.current = null;
+      }
+    };
+  }, [visible]); // ✅ Add visible to deps
+
+  // ✅ FIX: Cleanup listener cũ trước khi tạo mới
+  useEffect(() => {
+    if (!visible || !toilet?.id) {
+      // Cleanup khi modal đóng
+      if (reviewsListenerRef.current) {
+        reviewsListenerRef.current();
+        reviewsListenerRef.current = null;
+      }
+      setReviews([]); // ✅ Reset reviews khi đóng
+      return;
+    }
+
+    // Hủy listener cũ (nếu có)
+    if (reviewsListenerRef.current) {
+      reviewsListenerRef.current();
+    }
+
+    const q = query(
+      collection(db, "reviews"),
+      where("toiletId", "==", toilet.id),
+      orderBy("createdAt", "desc")
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setReviews(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+
+    reviewsListenerRef.current = unsubscribe;
+
+    return () => {
+      if (reviewsListenerRef.current) {
+        reviewsListenerRef.current();
+        reviewsListenerRef.current = null;
+      }
+    };
+  }, [visible, toilet?.id]); // ✅ Add visible to deps
+
+  // ✅ FIX: Reset state khi modal đóng
+  useEffect(() => {
+    if (!visible) {
+      setRating(0);
+      setComment("");
+      setSelectedTags([]);
+      setShowBooking(false);
+      setShowScanner(false);
+      setIsWalkInMode(false);
+    }
+  }, [visible]);
 
   const toggleTag = (tag: string) => {
     if (selectedTags.includes(tag)) {
@@ -110,11 +175,13 @@ export default function ToiletDetailModal({ visible, toilet, onClose }: any) {
       Alert.alert("Chưa đánh giá", "Vui lòng chọn số sao!");
       return;
     }
+
     try {
       await addDoc(collection(db, "reviews"), {
         toiletId: toilet.id,
         userId: auth.currentUser?.uid || "anonymous",
         userName: auth.currentUser?.displayName ?? "Khách ẩn danh",
+        userEmail: auth.currentUser?.email, // ✅ Add email for better tracking
         rating,
         comment,
         tags: selectedTags,
@@ -133,7 +200,8 @@ export default function ToiletDetailModal({ visible, toilet, onClose }: any) {
       setSelectedTags([]);
       Alert.alert("Cảm ơn!", "Đánh giá của bạn đã được ghi nhận.");
     } catch (error) {
-      Alert.alert("Lỗi", "Không thể gửi đánh giá.");
+      console.error("Submit review error:", error);
+      Alert.alert("Lỗi", "Không thể gửi đánh giá. Vui lòng thử lại.");
     }
   };
 
@@ -156,11 +224,8 @@ export default function ToiletDetailModal({ visible, toilet, onClose }: any) {
     setShowBooking(true);
   };
 
+  // ✅ CRITICAL FIX: Di chuyển early return XUỐNG DƯỚI tất cả hooks
   if (!visible) return null;
-
-  // 👉 SỬA LỖI: Fallback ảnh mạnh hơn, check cả mảng images và trường image đơn lẻ
-  const displayImage =
-    toilet?.images?.[0] || toilet?.image || "https://via.placeholder.com/400";
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -170,13 +235,19 @@ export default function ToiletDetailModal({ visible, toilet, onClose }: any) {
             <Ionicons name="arrow-back" size={24} color="#333" />
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            {toilet?.name}
+            {toilet?.name || "Chi tiết"}
           </Text>
           <View style={{ width: 40 }} />
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
-          <Image source={{ uri: displayImage }} style={styles.image} />
+          <Image
+            source={{ uri: displayImage }}
+            style={styles.image} // ✅ FIX: Add missing style
+            onError={(e) =>
+              console.log("Image failed to load:", e.nativeEvent.error)
+            }
+          />
 
           <View style={styles.detailsContainer}>
             <View style={styles.titleRow}>
@@ -184,7 +255,7 @@ export default function ToiletDetailModal({ visible, toilet, onClose }: any) {
               <View style={styles.ratingBadge}>
                 <Ionicons name="star" size={14} color="#FFD700" />
                 <Text style={styles.ratingText}>
-                  {toilet?.ratingTotal
+                  {toilet?.ratingTotal && toilet?.ratingCount
                     ? (toilet.ratingTotal / toilet.ratingCount).toFixed(1)
                     : "New"}
                 </Text>
@@ -340,15 +411,15 @@ export default function ToiletDetailModal({ visible, toilet, onClose }: any) {
           toilet={toilet}
           initialName={userProfile?.fullName}
           initialPhone={userProfile?.phoneNumber}
-          isWalkIn={isWalkInMode} // 👉 Truyền mode vào
+          isWalkIn={isWalkInMode}
         />
 
         {/* Modal Scan QR */}
         <QRScanner
           visible={showScanner}
           onClose={() => setShowScanner(false)}
-          toiletData={toilet} // Truyền data để validate QR đúng tiệm
-          onSuccess={handleScanSuccess} // 👉 Xử lý khi quét xong
+          toiletData={toilet}
+          onSuccess={handleScanSuccess}
         />
       </SafeAreaView>
     </Modal>
@@ -373,7 +444,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   content: { paddingBottom: 100 },
-  image: { width: "100%", height: 200, resizeMode: "cover" },
+  image: { width: "100%", height: 200, resizeMode: "cover" }, // ✅ FIX: Now used
   detailsContainer: { padding: 20 },
   titleRow: {
     flexDirection: "row",
@@ -455,8 +526,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 15,
   },
-
-  // 👉 Styles cho Tags Selector
   tagsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -474,7 +543,6 @@ const styles = StyleSheet.create({
   reviewTagSelected: { borderColor: "#2196F3", backgroundColor: "#E3F2FD" },
   reviewTagText: { fontSize: 12, color: "#666" },
   reviewTagTextSelected: { color: "#1976D2", fontWeight: "600" },
-
   reviewInput: {
     borderWidth: 1,
     borderColor: "#ddd",
@@ -491,7 +559,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   submitReviewText: { color: "white", fontWeight: "bold" },
-
   reviewItem: {
     marginTop: 15,
     borderBottomWidth: 1,
