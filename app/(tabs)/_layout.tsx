@@ -123,7 +123,7 @@ export default function TabLayout() {
         name="inventory"
         options={{
           title: "Vận hành",
-          href: null, 
+          href: null,
           tabBarIcon: ({ color }) => (
             <Ionicons name="construct" size={24} color={color} />
           ),
@@ -144,6 +144,18 @@ export default function TabLayout() {
       {/* =========================================================
           NHÓM 1: COMMON (Account)
          ========================================================= */}
+
+      <Tabs.Screen
+        name="adminPending"
+        options={{
+          title: "Duyệt",
+          href: role === "admin" ? "/(tabs)/adminPending" : null,
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="checkmark-done-circle" size={24} color={color} />
+          ),
+        }}
+      />
+
       <Tabs.Screen
         name="account"
         options={{
